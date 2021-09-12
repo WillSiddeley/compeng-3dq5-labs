@@ -1,0 +1,47 @@
+
+# Ignore all files by default
+*
+
+# Apply exceptions to the following
+
+# Updates to .gitignore
+!.gitignore
+
+# Do not ignore exceptions from the following sub-folders
+!experiment?/
+!exercise/
+!solution/
+!board/
+!data/
+!doc/
+!rtl/
+!sim/
+!syn/
+!tb/
+
+# The following file types are treated as exceptions
+
+# Markdown, PNG, text and pdf files for documentation
+!*.md
+!*.png
+!*.txt
+!*.pdf
+
+# Hardware design/verification files
+!*.svh
+!*.sv
+!*.v
+!*.h
+
+# Files for synthesis/simulation
+!*.do
+!*.tcl
+!*.qsf
+!*.qpf
+!*.sdc
+
+# Software model files
+![Mm]akefile
+!*.c
+!*.cc
+!*.cpp
