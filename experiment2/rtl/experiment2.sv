@@ -26,45 +26,105 @@ module experiment2 (
 logic [3:0] value;
 logic [6:0] value_7_segment;
 
+logic [3:0] value_1;
+logic [6:0] value_7_segment_1;
+
 // Instantiate a module for converting hex number to 7-bit value for the 7-segment display
 convert_hex_to_seven_segment unit0 (
 	.hex_value(value), 
 	.converted_value(value_7_segment)
 );
 
+convert_hex_to_seven_segment unit1 (
+	.hex_value(value_1), 
+	.converted_value(value_7_segment_1)
+);
+
 // A priority encoder using if-else statement
 always_comb begin
-	if (SWITCH_I[9] == 1'b1) begin
-		value = 4'd9;
+
+	if (SWITCH_I[17] == 1'b1) begin
+		value = 4'd8;
+		value_1 = 4'd1;
 	end else begin
-		if (SWITCH_I[8] == 1'b1) begin
-			value = 4'd8;
+		if (SWITCH_I[16] == 1'b1) begin
+			value = 4'd7;
+			value_1 = 4'd1;
 		end else begin
-			if (SWITCH_I[7] == 1'b1) begin
-				value = 4'd7;
+			if (SWITCH_I[15] == 1'b1) begin
+				value = 4'd6;
+				value_1 = 4'd1;
 			end else begin
-				if (SWITCH_I[6] == 1'b1) begin
-					value = 4'd6;
+				if (SWITCH_I[14] == 1'b1) begin
+					value = 4'd5;
+					value_1 = 4'd1;
 				end else begin
-					if (SWITCH_I[5] == 1'b1) begin
-						value = 4'd5;
+					if (SWITCH_I[13] == 1'b1) begin
+						value = 4'd4;
+						value_1 = 4'd1;
 					end else begin
-						if (SWITCH_I[4] == 1'b1) begin
-							value = 4'd4;
+						if (SWITCH_I[12] == 1'b1) begin
+							value = 4'd3;
+							value_1 = 4'd1;
 						end else begin
-							if (SWITCH_I[3] == 1'b1) begin
-								value = 4'd3;
+							if (SWITCH_I[11] == 1'b1) begin
+								value = 4'd2;
+								value_1 = 4'd1;
 							end else begin
-								if (SWITCH_I[2] == 1'b1) begin
-									value = 4'd2;
+								if (SWITCH_I[10] == 1'b1) begin
+									value = 4'd1;
+									value_1 = 4'd1;
 								end else begin
-									if (SWITCH_I[1] == 1'b1) begin
-										value = 4'd1;
+									if (SWITCH_I[9] == 1'b1) begin
+										value = 4'd0;
+										value_1 = 4'd1;
 									end else begin
-										if (SWITCH_I[0] == 1'b1) begin
-											value = 4'd0;
+										if (SWITCH_I[8] == 1'b1) begin
+											value = 4'd9;
+											value_1 = 4'd0;
 										end else begin
-											value = 4'hF;
+											if (SWITCH_I[7] == 1'b1) begin
+												value = 4'd8;
+												value_1 = 4'd0;
+											end else begin
+												if (SWITCH_I[6] == 1'b1) begin
+													value = 4'd7;
+													value_1 = 4'd0;
+												end else begin
+													if (SWITCH_I[5] == 1'b1) begin
+														value = 4'd6;
+														value_1 = 4'd0;
+													end else begin
+														if (SWITCH_I[4] == 1'b1) begin
+															value = 4'd5;
+															value_1 = 4'd0;
+														end else begin
+															if (SWITCH_I[3] == 1'b1) begin
+																value = 4'd4;
+																value_1 = 4'd0;
+															end else begin
+																if (SWITCH_I[2] == 1'b1) begin
+																	value = 4'd3;
+																	value_1 = 4'd0;
+																end else begin
+																	if (SWITCH_I[1] == 1'b1) begin
+																		value = 4'd2;
+																		value_1 = 4'd0;
+																	end else begin
+																		if (SWITCH_I[0] == 1'b1) begin
+																			value = 4'd1;
+																			value_1 = 4'd0;
+																		end else begin
+																			value = 4'hF;
+																			value_1 = 4'hF;
+																		end
+																	end
+																end
+															end
+														end
+													end
+												end
+											end
 										end
 									end
 								end
@@ -78,7 +138,7 @@ always_comb begin
 end
 
 assign  SEVEN_SEGMENT_N_O[0] = value_7_segment,
-        SEVEN_SEGMENT_N_O[1] = 7'h7f,
+        SEVEN_SEGMENT_N_O[1] = value_7_segment_1,
         SEVEN_SEGMENT_N_O[2] = 7'h7f,
         SEVEN_SEGMENT_N_O[3] = 7'h7f,
         SEVEN_SEGMENT_N_O[4] = 7'h7f,

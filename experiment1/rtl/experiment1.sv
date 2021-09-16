@@ -43,13 +43,13 @@ always_comb begin
 end
 
 always_comb begin
-	NAND4 = 1'b0;	
-	NOR4  = 1'b0;	
+	NAND4 = ~&SWITCH_I[11:8];	
+	NOR4  = ~|SWITCH_I[11:8];	
 end
 
 always_comb begin
-	AND_OR = 1'b0;
-	AND_XOR = 1'b0;
+	AND_OR = (&SWITCH_I[5:4]) | (&SWITCH_I[7:6]);
+	AND_XOR = (&SWITCH_I[1:0]) ^ (&SWITCH_I[3:2]);
 end
 
 assign LED_RED_O = SWITCH_I;

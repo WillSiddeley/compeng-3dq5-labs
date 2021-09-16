@@ -13,4 +13,8 @@ add wave -hex UUT/LED_RED_O
 add wave -hex UUT/LED_GREEN_O
 add wave -hex UUT/SEVEN_SEGMENT_N_O
 
+add wave -divider -height 20 {Internal Signals}
+
+add wave -hex UUT/value_1
+add wave -hex UUT/value
 
