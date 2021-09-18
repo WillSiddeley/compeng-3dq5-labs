@@ -26,7 +26,7 @@ module experiment4 (
 		output logic[17:0] LED_RED_O              // 18 red LEDs
 );
 
-parameter	MAX_1Hz_div_count = 24999999;
+parameter	MAX_1Hz_div_count = 12499999;
 
 logic resetn;
 logic [24:0] clock_div_count;
@@ -78,7 +78,11 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 		counter <= 8'd0;
 	end else begin
 		if (count_enable == 1'b1) begin
-			counter <= counter + 8'd1;
+			if (counter > 58) begin
+				counter <= 8'd0;
+			end else begin
+				counter <= counter + 8'd1;
+			end
 		end
 	end
 end

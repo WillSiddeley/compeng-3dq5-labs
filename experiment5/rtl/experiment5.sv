@@ -44,6 +44,7 @@ logic [3:0] led_green;
 logic [7:0] counter;
 logic [6:0] value_7_segment0, value_7_segment1;
 logic stop_count;
+logic down_count;
 
 assign resetn = ~SWITCH_I[17];
 
@@ -141,15 +142,20 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	if (resetn == 1'b0) begin
 		led_green <= 4'h0;
 		stop_count <= 1'b0;
+		down_count <= 1'b0;
 	end else begin
 		if (push_button_status_buf[0] == 1'b0 && push_button_status[0] == 1'b1) begin
 			led_green[0] <= ~led_green[0];		
 			stop_count <= ~stop_count;
 		end
-		if (push_button_status_buf[1] == 1'b0 && push_button_status[1] == 1'b1) 
-			led_green[1] <= ~led_green[1];		
-		if (push_button_status_buf[2] == 1'b0 && push_button_status[2] == 1'b1) 
-			led_green[2] <= ~led_green[2];		
+		if (push_button_status_buf[1] == 1'b0 && push_button_status[1] == 1'b1) begin
+			led_green[1] <= ~led_green[1];
+			down_count <= 1'd0;
+		end
+		if (push_button_status_buf[2] == 1'b0 && push_button_status[2] == 1'b1) begin
+			led_green[2] <= ~led_green[2];
+			down_count <= 1'd1;
+		end
 		if (push_button_status_buf[3] == 1'b0 && push_button_status[3] == 1'b1) 
 			led_green[3] <= ~led_green[3];		
 	end
@@ -162,7 +168,11 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	end else begin
 		if (clock_1Hz_buf == 1'b0 && clock_1Hz == 1'b1) begin
 			if (stop_count == 1'b0) begin
-				counter <= counter + 8'd1;
+				if (down_count <= 1'd0) begin
+					counter <= counter + 8'd1;
+				end else begin
+					counter <= counter - 8'd1;
+				end
 			end
 		end
 	end
