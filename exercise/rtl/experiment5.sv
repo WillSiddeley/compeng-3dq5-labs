@@ -41,9 +41,20 @@ logic [9:0] debounce_shift_reg [3:0];
 logic [3:0] push_button_status, push_button_status_buf;
 logic [3:0] led_green;
 
-logic [7:0] counter;
+logic [3:0] value, value_1;
 logic [6:0] value_7_segment0, value_7_segment1;
+
+logic XNOR_LED7;
+logic AND_LED6;
+logic NAND_LED5;
+logic OR_LED4;
+logic LED3;
+logic LED2;
+logic LED1;
+logic LED0;
+
 logic stop_count;
+logic up_count;
 
 assign resetn = ~SWITCH_I[17];
 
@@ -141,15 +152,21 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	if (resetn == 1'b0) begin
 		led_green <= 4'h0;
 		stop_count <= 1'b0;
+		// When up_count is a 0 the count direction is up, when it is a 1 the count direction is down
+		up_count <= 1'b0;
 	end else begin
 		if (push_button_status_buf[0] == 1'b0 && push_button_status[0] == 1'b1) begin
 			led_green[0] <= ~led_green[0];		
 			stop_count <= ~stop_count;
 		end
-		if (push_button_status_buf[1] == 1'b0 && push_button_status[1] == 1'b1) 
-			led_green[1] <= ~led_green[1];		
-		if (push_button_status_buf[2] == 1'b0 && push_button_status[2] == 1'b1) 
+		if (push_button_status_buf[1] == 1'b0 && push_button_status[1] == 1'b1) begin
+			led_green[1] <= ~led_green[1];
+			up_count <= 1'b0;
+		end
+		if (push_button_status_buf[2] == 1'b0 && push_button_status[2] == 1'b1) begin
 			led_green[2] <= ~led_green[2];		
+			up_count <= 1'b1;
+		end
 		if (push_button_status_buf[3] == 1'b0 && push_button_status[3] == 1'b1) 
 			led_green[3] <= ~led_green[3];		
 	end
@@ -158,24 +175,287 @@ end
 // Counter is incremented here
 always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	if (resetn == 1'b0) begin
-		counter <= 8'h00;
+		value <= 4'h0;
+		value_1 <= 4'h0;
 	end else begin
 		if (clock_1Hz_buf == 1'b0 && clock_1Hz == 1'b1) begin
 			if (stop_count == 1'b0) begin
-				counter <= counter + 8'd1;
+				// UP COUNTER
+				if (up_count == 1'b0) begin
+					if (value < 4'h4) begin
+						value <= value + 4'h1;
+					end else begin
+						value <= 4'h0;
+						if (value_1 < 4'h4) begin
+							value_1 <= value_1 + 4'h1;
+						end else begin
+							value_1 <= 4'h0;
+						end
+					end
+				// DOWN COUNTER
+				end else begin
+					if (value > 4'h0) begin
+						value <= value - 4'h1;
+					end else begin
+						value <= 4'h4;
+						if (value_1 > 4'h0) begin
+							value_1 <= value_1 - 4'h1;
+						end else begin
+							value_1 <= 4'h4;
+						end
+					end
+				end
 			end
 		end
 	end
 end
 
+always_comb begin
+
+	XNOR_LED7 = ~^SWITCH_I[15:0];
+	
+	AND_LED6 = (&SWITCH_I[15:8]) & (~|SWITCH_I[7:0]);
+	
+	NAND_LED5 = ~&SWITCH_I[15:8];
+
+	OR_LED4 = |SWITCH_I[7:0];
+	
+	// Priority encoder for switch 15
+	
+	if (SWITCH_I[15] == 1'b1) begin
+		
+		if (SWITCH_I[0] == 1'b1) begin
+			LED3 = 1'b0;
+			LED2 = 1'b0;
+			LED1 = 1'b0;
+			LED0 = 1'b0;
+		end else begin
+			if (SWITCH_I[1] == 1'b1) begin
+				LED3 = 1'b0;
+				LED2 = 1'b0;
+				LED1 = 1'b0;
+				LED0 = 1'b1;
+			end else begin
+				if (SWITCH_I[2] == 1'b1) begin
+					LED3 = 1'b0;
+					LED2 = 1'b0;
+					LED1 = 1'b1;
+					LED0 = 1'b0;
+				end else begin
+					if (SWITCH_I[3] == 1'b1) begin
+						LED3 = 1'b0;
+						LED2 = 1'b0;
+						LED1 = 1'b1;
+						LED0 = 1'b1;
+					end else begin
+						if (SWITCH_I[4] == 1'b1) begin
+							LED3 = 1'b0;
+							LED2 = 1'b1;
+							LED1 = 1'b0;
+							LED0 = 1'b0;
+						end else begin
+							if (SWITCH_I[5] == 1'b1) begin
+								LED3 = 1'b0;
+								LED2 = 1'b1;
+								LED1 = 1'b0;
+								LED0 = 1'b1;
+							end else begin
+								if (SWITCH_I[6] == 1'b1) begin
+									LED3 = 1'b0;
+									LED2 = 1'b1;
+									LED1 = 1'b1;
+									LED0 = 1'b0;
+								end else begin
+									if (SWITCH_I[7] == 1'b1) begin
+										LED3 = 1'b0;
+										LED2 = 1'b1;
+										LED1 = 1'b1;
+										LED0 = 1'b1;
+									end else begin
+										if (SWITCH_I[8] == 1'b1) begin
+											LED3 = 1'b1;
+											LED2 = 1'b0;
+											LED1 = 1'b0;
+											LED0 = 1'b0;
+										end else begin
+											if (SWITCH_I[9] == 1'b1) begin
+												LED3 = 1'b1;
+												LED2 = 1'b0;
+												LED1 = 1'b0;
+												LED0 = 1'b1;
+											end else begin
+												if (SWITCH_I[10] == 1'b1) begin
+													LED3 = 1'b1;
+													LED2 = 1'b0;
+													LED1 = 1'b1;
+													LED0 = 1'b0;
+												end else begin
+													if (SWITCH_I[11] == 1'b1) begin
+														LED3 = 1'b1;
+														LED2 = 1'b0;
+														LED1 = 1'b1;
+														LED0 = 1'b1;
+													end else begin
+														if (SWITCH_I[12] == 1'b1) begin
+															LED3 = 1'b1;
+															LED2 = 1'b1;
+															LED1 = 1'b0;
+															LED0 = 1'b0;
+														end else begin
+															if (SWITCH_I[13] == 1'b1) begin
+																LED3 = 1'b1;
+																LED2 = 1'b1;
+																LED1 = 1'b0;
+																LED0 = 1'b1;
+															end else begin
+																if (SWITCH_I[14] == 1'b1) begin
+																	LED3 = 1'b1;
+																	LED2 = 1'b1;
+																	LED1 = 1'b1;
+																	LED0 = 1'b0;
+																end else begin
+																	LED3 = 1'b1;
+																	LED2 = 1'b1;
+																	LED1 = 1'b1;
+																	LED0 = 1'b1;
+																end
+															end
+														end
+													end
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end else begin
+	
+		if (SWITCH_I[0] == 1'b0) begin
+			LED3 = 1'b0;
+			LED2 = 1'b0;
+			LED1 = 1'b0;
+			LED0 = 1'b0;
+		end else begin
+			if (SWITCH_I[1] == 1'b0) begin
+				LED3 = 1'b0;
+				LED2 = 1'b0;
+				LED1 = 1'b0;
+				LED0 = 1'b1;
+			end else begin
+				if (SWITCH_I[2] == 1'b0) begin
+					LED3 = 1'b0;
+					LED2 = 1'b0;
+					LED1 = 1'b1;
+					LED0 = 1'b0;
+				end else begin
+					if (SWITCH_I[3] == 1'b0) begin
+						LED3 = 1'b0;
+						LED2 = 1'b0;
+						LED1 = 1'b1;
+						LED0 = 1'b1;
+					end else begin
+						if (SWITCH_I[4] == 1'b0) begin
+							LED3 = 1'b0;
+							LED2 = 1'b1;
+							LED1 = 1'b0;
+							LED0 = 1'b0;
+						end else begin
+							if (SWITCH_I[5] == 1'b0) begin
+								LED3 = 1'b0;
+								LED2 = 1'b1;
+								LED1 = 1'b0;
+								LED0 = 1'b1;
+							end else begin
+								if (SWITCH_I[6] == 1'b0) begin
+									LED3 = 1'b0;
+									LED2 = 1'b1;
+									LED1 = 1'b1;
+									LED0 = 1'b0;
+								end else begin
+									if (SWITCH_I[7] == 1'b0) begin
+										LED3 = 1'b0;
+										LED2 = 1'b1;
+										LED1 = 1'b1;
+										LED0 = 1'b1;
+									end else begin
+										if (SWITCH_I[8] == 1'b0) begin
+											LED3 = 1'b1;
+											LED2 = 1'b0;
+											LED1 = 1'b0;
+											LED0 = 1'b0;
+										end else begin
+											if (SWITCH_I[9] == 1'b0) begin
+												LED3 = 1'b1;
+												LED2 = 1'b0;
+												LED1 = 1'b0;
+												LED0 = 1'b1;
+											end else begin
+												if (SWITCH_I[10] == 1'b0) begin
+													LED3 = 1'b1;
+													LED2 = 1'b0;
+													LED1 = 1'b1;
+													LED0 = 1'b0;
+												end else begin
+													if (SWITCH_I[11] == 1'b0) begin
+														LED3 = 1'b1;
+														LED2 = 1'b0;
+														LED1 = 1'b1;
+														LED0 = 1'b1;
+													end else begin
+														if (SWITCH_I[12] == 1'b0) begin
+															LED3 = 1'b1;
+															LED2 = 1'b1;
+															LED1 = 1'b0;
+															LED0 = 1'b0;
+														end else begin
+															if (SWITCH_I[13] == 1'b0) begin
+																LED3 = 1'b1;
+																LED2 = 1'b1;
+																LED1 = 1'b0;
+																LED0 = 1'b1;
+															end else begin
+																if (SWITCH_I[14] == 1'b0) begin
+																	LED3 = 1'b1;
+																	LED2 = 1'b1;
+																	LED1 = 1'b1;
+																	LED0 = 1'b0;
+																end else begin
+																	LED3 = 1'b1;
+																	LED2 = 1'b1;
+																	LED1 = 1'b1;
+																	LED0 = 1'b1;
+																end
+															end
+														end
+													end
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+
+
 // Instantiate modules for converting hex number to 7-bit value for the 7-segment display
 convert_hex_to_seven_segment unit0 (
-	.hex_value(counter[3:0]), 
+	.hex_value(value), 
 	.converted_value(value_7_segment0)
 );
 
 convert_hex_to_seven_segment unit1 (
-	.hex_value(counter[7:4]), 
+	.hex_value(value_1), 
 	.converted_value(value_7_segment1)
 );
 
@@ -188,6 +468,6 @@ assign	SEVEN_SEGMENT_N_O[0] = value_7_segment0,
 		SEVEN_SEGMENT_N_O[6] = 7'h7f,
 		SEVEN_SEGMENT_N_O[7] = 7'h7f;
 
-assign LED_GREEN_O = {1'b0, ~PUSH_BUTTON_N_I[3], led_green[3], ~PUSH_BUTTON_N_I[2], led_green[2], ~PUSH_BUTTON_N_I[1], led_green[1], ~PUSH_BUTTON_N_I[0], led_green[0]};
+assign LED_GREEN_O = {1'b1, XNOR_LED7, AND_LED6, NAND_LED5, OR_LED4, LED3, LED2, LED1, LED0};
 
 endmodule

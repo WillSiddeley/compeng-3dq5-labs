@@ -44,75 +44,75 @@ convert_hex_to_seven_segment unit1 (
 always_comb begin
 
 	if (SWITCH_I[17] == 1'b1) begin
-		value = 4'd8;
+		value = 4'd7;
 		value_1 = 4'd1;
 	end else begin
 		if (SWITCH_I[16] == 1'b1) begin
-			value = 4'd7;
+			value = 4'd6;
 			value_1 = 4'd1;
 		end else begin
 			if (SWITCH_I[15] == 1'b1) begin
-				value = 4'd6;
+				value = 4'd5;
 				value_1 = 4'd1;
 			end else begin
 				if (SWITCH_I[14] == 1'b1) begin
-					value = 4'd5;
+					value = 4'd4;
 					value_1 = 4'd1;
 				end else begin
 					if (SWITCH_I[13] == 1'b1) begin
-						value = 4'd4;
+						value = 4'd3;
 						value_1 = 4'd1;
 					end else begin
 						if (SWITCH_I[12] == 1'b1) begin
-							value = 4'd3;
+							value = 4'd2;
 							value_1 = 4'd1;
 						end else begin
 							if (SWITCH_I[11] == 1'b1) begin
-								value = 4'd2;
+								value = 4'd1;
 								value_1 = 4'd1;
 							end else begin
 								if (SWITCH_I[10] == 1'b1) begin
-									value = 4'd1;
+									value = 4'd0;
 									value_1 = 4'd1;
 								end else begin
 									if (SWITCH_I[9] == 1'b1) begin
-										value = 4'd0;
-										value_1 = 4'd1;
+										value = 4'd9;
+										value_1 = 4'd0;
 									end else begin
 										if (SWITCH_I[8] == 1'b1) begin
-											value = 4'd9;
+											value = 4'd8;
 											value_1 = 4'd0;
 										end else begin
 											if (SWITCH_I[7] == 1'b1) begin
-												value = 4'd8;
+												value = 4'd7;
 												value_1 = 4'd0;
 											end else begin
 												if (SWITCH_I[6] == 1'b1) begin
-													value = 4'd7;
+													value = 4'd6;
 													value_1 = 4'd0;
 												end else begin
 													if (SWITCH_I[5] == 1'b1) begin
-														value = 4'd6;
+														value = 4'd5;
 														value_1 = 4'd0;
 													end else begin
 														if (SWITCH_I[4] == 1'b1) begin
-															value = 4'd5;
+															value = 4'd4;
 															value_1 = 4'd0;
 														end else begin
 															if (SWITCH_I[3] == 1'b1) begin
-																value = 4'd4;
+																value = 4'd3;
 																value_1 = 4'd0;
 															end else begin
 																if (SWITCH_I[2] == 1'b1) begin
-																	value = 4'd3;
+																	value = 4'd2;
 																	value_1 = 4'd0;
 																end else begin
 																	if (SWITCH_I[1] == 1'b1) begin
-																		value = 4'd2;
+																		value = 4'd1;
 																		value_1 = 4'd0;
 																	end else begin
 																		if (SWITCH_I[0] == 1'b1) begin
-																			value = 4'd1;
+																			value = 4'd0;
 																			value_1 = 4'd0;
 																		end else begin
 																			value = 4'hF;

@@ -18,6 +18,6 @@ add wave -divider -height 20 {internal signals}
 add wave -hex UUT/debounce_shift_reg
 add wave -hex UUT/push_button_status_buf
 add wave -bin UUT/stop_count
-add wave -hex {UUT/counter[7:4]}
-add wave -hex {UUT/counter[3:0]}
+add wave -hex {UUT/value}
+add wave -hex {UUT/value_1}
 
