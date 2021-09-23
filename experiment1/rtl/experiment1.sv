@@ -30,11 +30,14 @@ parameter	MAX_1kHz_div_count = 24999;
 
 logic resetn;
 
-enum logic [1:0] {
+enum logic [2:0] {
 	S_IDLE,
 	S_PB0_ONCE,
 	S_PB0_TWICE,
-	S_PB0_DISPLAY
+	S_PB0_DISPLAY,
+	S_PB1_ONCE,
+	S_PB1_TWICE,
+	S_PB1_DISPLAY
 } state;
 
 logic [15:0] clock_1kHz_div_count;
@@ -44,7 +47,7 @@ logic [9:0] debounce_shift_reg [3:0];
 logic [3:0] push_button_status, push_button_status_buf;
 logic [3:0] PB_detected;
 
-logic [1:0] counter;
+logic [2:0] counter;
 logic [3:0] value;
 logic [6:0] value_7_segment [1:0];
 
@@ -120,25 +123,36 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	end else begin
 		case (state)
 		S_IDLE: begin
-			if (PB_detected[0] == 1'b1) begin
-				state <= S_PB0_ONCE;
-			end
+			if (PB_detected[0] == 1'b1) state <= S_PB0_ONCE;
+			if (PB_detected[1] == 1'b1) state <= S_PB1_ONCE;
 		end
 		S_PB0_ONCE: begin
 			if (PB_detected[0] == 1'b1) state <= S_PB0_TWICE;
-			else 
-				if (PB_detected[1] || PB_detected[2] || PB_detected[3]) 
-					state <= S_IDLE;
+			if (PB_detected[1] == 1'b1) state <= S_PB1_ONCE;
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
 		end
 		S_PB0_TWICE: begin
-			if (PB_detected[0] == 1'b1) state <= S_PB0_DISPLAY;			
-			else 
-				if (PB_detected[1] || PB_detected[2] || PB_detected[3]) 
-					state <= S_IDLE;
+			if (PB_detected[0] == 1'b1) state <= S_PB0_DISPLAY;
+			if (PB_detected[1] == 1'b1) state <= S_PB1_ONCE;		
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
 		end
 		S_PB0_DISPLAY: begin
-			if (PB_detected[1] || PB_detected[2] || PB_detected[3]) 
-				state <= S_IDLE;
+			if (PB_detected[1] == 1'b1) state <= S_PB1_ONCE;
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
+		end
+		S_PB1_ONCE: begin
+			if (PB_detected[1] == 1'b1) state <= S_PB1_TWICE;
+			if (PB_detected[0] == 1'b1) state <= S_PB0_ONCE;
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
+		end
+		S_PB1_TWICE: begin
+			if (PB_detected[1] == 1'b1) state <= S_PB1_DISPLAY;
+			if (PB_detected[0] == 1'b1) state <= S_PB0_ONCE;
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
+		end
+		S_PB1_DISPLAY: begin
+			if (PB_detected[0] == 1'b1) state <= S_PB0_ONCE;
+			else if (PB_detected[2] || PB_detected[3]) state <= S_IDLE;
 		end
 		endcase
 	end
@@ -146,17 +160,23 @@ end
 
 // Control value according to the state
 always_comb begin
-	if (state == S_PB0_DISPLAY) value = 4'd0;
-	else value = 4'hf;
+	case (state)
+	S_PB0_DISPLAY: value = 4'd0;
+	S_PB1_DISPLAY: value = 4'd1;
+	default: value = 4'hf;
+	endcase
 end
 
 // Control counter according to the state
 always_comb begin
 	case (state)
-	S_PB0_ONCE: counter = 2'd1;
-	S_PB0_TWICE: counter = 2'd2;
-	S_PB0_DISPLAY: counter = 2'd3;		
-	default: counter = 2'd0;
+	S_PB0_ONCE: counter = 3'd1;
+	S_PB0_TWICE: counter = 3'd2;
+	S_PB0_DISPLAY: counter = 3'd3;
+	S_PB1_ONCE: counter = 3'd4;
+	S_PB1_TWICE: counter = 3'd5;
+	S_PB1_DISPLAY: counter = 3'd6;
+	default: counter = 3'd0;
 	endcase
 end
 

@@ -34,6 +34,7 @@ logic resetn;
 
 logic [7:0] PS2_code;
 logic PS2_code_ready;
+logic PS2_break_code;
 
 logic [23:0] seven_segment_shift_reg;
 logic PS2_code_ready_buf;
@@ -59,12 +60,25 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	if (resetn == 1'b0) begin
 		seven_segment_shift_reg <= 24'h000000;
 		PS2_code_ready_buf <= 1'b0;
+		PS2_break_code <= 1'b0;
 	end else begin
 		PS2_code_ready_buf <= PS2_code_ready;
 		
 		if (PS2_code_ready && ~PS2_code_ready_buf && PS2_make_code) begin
 			// scan code detected
-			seven_segment_shift_reg <= {seven_segment_shift_reg[15:0], PS2_code};
+			
+			if (PS2_code == 8'hF0) begin
+				PS2_break_code <= 1'b1;
+			end
+			
+			if (PS2_break_code == 1'b0) begin
+				seven_segment_shift_reg <= {seven_segment_shift_reg[15:0], PS2_code};
+				PS2_break_code <= 1'b1;
+			end
+			
+			if (PS2_break_code == 1'b1 && PS2_code != 8'hF0) begin
+				PS2_break_code <= 1'b0;
+			end
 		end
 	end
 end

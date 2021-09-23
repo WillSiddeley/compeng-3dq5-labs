@@ -18,4 +18,5 @@ add wave UUT/state
 add wave -hex UUT/debounce_shift_reg
 add wave -hex UUT/push_button_status
 add wave -hex UUT/PB_detected
-
+add wave -hex UUT/counter
+add wave -hex UUT/value

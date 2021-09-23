@@ -21,5 +21,6 @@ add wave -hex UUT/PS2_code_ready
 add wave -hex UUT/PS2_make_code
 add wave -hex UUT/PS2_code
 add wave -hex UUT/seven_segment_shift_reg
+add wave -hex UUT/PS2_break_code
 
 
