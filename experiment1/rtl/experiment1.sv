@@ -86,8 +86,10 @@ assign VGA_CLOCK_O = ~CLOCK_50_I;
 // signal concatenation through replication:
 // ~pixel_X_pos[i] is replicated 8 times to create a 8 bit signal 
 
-assign VGA_red = SWITCH_I[0] ? {8{~pixel_Y_pos[8]}} : {8{~pixel_X_pos[8]}};
-assign VGA_green = SWITCH_I[0] ? {8{~pixel_Y_pos[7]}} : {8{~pixel_X_pos[7]}};
-assign VGA_blue = SWITCH_I[0] ? {8{~pixel_Y_pos[6]}} : {8{~pixel_X_pos[6]}}; 
+assign VGA_red = SWITCH_I[0] ? {8{~pixel_Y_pos[7]}} : {8{~pixel_X_pos[7]}};
+assign VGA_green = SWITCH_I[0] ? {8{~pixel_Y_pos[6]}} : {8{~pixel_X_pos[6]}};
+assign VGA_blue = SWITCH_I[0] ? {8{~pixel_Y_pos[5]}} : {8{~pixel_X_pos[5]}}; 
+
+
 
 endmodule

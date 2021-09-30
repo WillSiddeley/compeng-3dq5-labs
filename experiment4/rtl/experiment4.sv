@@ -119,7 +119,7 @@ char_rom char_rom_unit (
 	.Clock(CLOCK_50_I),
 	.Character_address(character_address),
 	.Font_row(pixel_Y_pos[2:0]),
-	.Font_col(pixel_X_pos[2:0]),
+	.Font_col(delay_X_pos[2:0]),
 	.Rom_mux_output(rom_mux_output)
 );
 

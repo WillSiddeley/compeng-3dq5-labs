@@ -43,5 +43,5 @@ parameter	Y_START = V_SYNC_CYC + V_SYNC_BACK;
 // Pipe Delay in the Video Data Path
 // Note: in the current implementation 
 // PIPE_DELAY must be smaller than H_SYNC_FRONT 
-parameter	PIPE_DELAY = 0;
+parameter	PIPE_DELAY = 1;
 parameter	X_DELAYED_START = PIPE_DELAY + X_START;

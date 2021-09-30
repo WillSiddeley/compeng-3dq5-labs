@@ -20,8 +20,13 @@ add wave -hex UUT/VGA_BLUE_O
 add wave -divider -height 20 {internal signals}
 add wave -uns UUT/pixel_X_pos
 add wave -uns UUT/pixel_Y_pos
-add wave -uns UUT/object_on
 add wave -hex UUT/VGA_red
 add wave -hex UUT/VGA_green
 add wave -hex UUT/VGA_blue
-
+add wave -uns UUT/object_on_white
+add wave -uns UUT/object_on_red
+add wave -uns UUT/object_on_green
+add wave -uns UUT/object_on_blue
+add wave -uns UUT/object_on_yellow
+add wave -uns UUT/object_on_cyan
+add wave -uns UUT/object_on_magenta
