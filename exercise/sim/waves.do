@@ -30,6 +30,33 @@ add wave -divider -height 20 {PS2 signals}
 add wave -hex UUT/PS2_code
 add wave -hex UUT/PS2_reg
 add wave -bin UUT/PS2_code_ready
+add wave -bin UUT/PS2_code_ready_buf
 add wave -bin UUT/PS2_make_code
 
+add wave -oct UUT/char_to_add
+add wave -hex UUT/data_reg
+add wave -oct UUT/max_letter
 
+add wave -divider -height 20 {Letter Counters}
+add wave -hex UUT/num_A
+add wave -hex UUT/num_B
+add wave -hex UUT/num_C
+add wave -hex UUT/num_D
+add wave -hex UUT/num_E
+add wave -hex UUT/num_F
+add wave -oct UUT/number_address_1
+add wave -oct UUT/number_address_2
+
+add wave -divider -height 20 {Letter BCD Counters}
+add wave -hex UUT/letter_BCD_A1
+add wave -hex UUT/letter_BCD_A2
+add wave -hex UUT/letter_BCD_B1
+add wave -hex UUT/letter_BCD_B2
+add wave -hex UUT/letter_BCD_C1
+add wave -hex UUT/letter_BCD_C2
+add wave -hex UUT/letter_BCD_D1
+add wave -hex UUT/letter_BCD_D2
+add wave -hex UUT/letter_BCD_E1
+add wave -hex UUT/letter_BCD_E2
+add wave -hex UUT/letter_BCD_F1
+add wave -hex UUT/letter_BCD_F2
