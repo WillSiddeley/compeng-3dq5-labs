@@ -24,21 +24,36 @@ module TB;
 
 	initial begin
         $timeformat(-6, 2, "us", 10);
-		switch = 18'h00000;
+		switch = 18'b000000000000000000;
 	end
 
 	initial begin
 		# 100;
-		switch = 18'h00001;
+		switch = 18'b000000000000000001;
 		# 100;
-		switch = 18'h00003;
+		switch = 18'b000000000000000011;
 		# 100;
-		switch = 18'h00007;
+		switch = 18'b000000000000000111;
 		# 100;
+		switch = 18'b000000000000001000;
+		# 100
+		switch = 18'b000000000000001001;
 	end
 
 	always@(led_red) begin
 		$display("%t: red leds = %b", $realtime, led_red);
-    end
+   end
+	
+	always@(led_green) begin
+		$display("%t: green leds = %b", $realtime, led_green);
+	end
+	
+	always@(seven_seg_n[0]) begin
+		$display("%t: seven segment display right = %b", $realtime, seven_seg_n[0]);
+	end
+	
+	always@(seven_seg_n[7]) begin
+		$display("%t: seven segment display left = %b", $realtime, seven_seg_n[7]);
+	end
 
 endmodule
