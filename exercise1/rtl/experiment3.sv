@@ -32,7 +32,7 @@ enum logic [2:0] {
 	S_IDLE
 } state;
 
-logic [8:0] address_ram0, address_ram0_shifted, address_ram1, address_ram1_shifted;
+logic [8:0] address_ram, address_ram_shifted;
 logic [7:0] write_data_a [1:0];
 logic [7:0] write_data_b [1:0];
 logic write_enable_a [1:0];
@@ -42,8 +42,8 @@ logic [7:0] read_data_b [1:0];
 
 // RAM0 = W
 dual_port_RAM0 RAM_inst0 (
-	.address_a ( address_ram0 ),
-	.address_b ( address_ram0_shifted ),
+	.address_a ( address_ram ),
+	.address_b ( address_ram_shifted ),
 	.clock ( CLOCK_50_I ),
 	.data_a ( write_data_a[0] ),
 	.data_b ( write_data_b[0] ),
@@ -55,8 +55,8 @@ dual_port_RAM0 RAM_inst0 (
 
 // RAM1 = X
 dual_port_RAM1 RAM_inst1 (
-	.address_a ( address_ram1 ),
-	.address_b ( address_ram1_shifted ),
+	.address_a ( address_ram ),
+	.address_b ( address_ram_shifted ),
 	.clock ( CLOCK_50_I ),
 	.data_a ( write_data_a[1] ),
 	.data_b ( write_data_b[1] ),
@@ -82,10 +82,8 @@ dual_port_RAM1 RAM_inst1 (
 // FSM to control the read and write sequence
 always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 	if (resetn == 1'b0) begin
-		address_ram0 <= 9'd0;
-		address_ram1 <= 9'd0;
-		address_ram0_shifted <= 9'd256;
-		address_ram1_shifted <= 9'd256;
+		address_ram <= 9'd0;
+		address_ram_shifted <= 9'd256;
 		write_enable_a[0] <= 1'b0;
 		write_enable_a[1] <= 1'b0;
 		write_enable_b[0] <= 1'b0;
@@ -101,10 +99,9 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 			S_READ: begin
 			
 				// Prepare addresses to read
-				address_ram0 <= address_ram0 + 9'd1;
-				address_ram1 <= address_ram1 + 9'd1;
-				address_ram0_shifted <= address_ram0_shifted + 9'd1;
-				address_ram1_shifted <= address_ram0_shifted + 9'd1;
+				address_ram <= address_ram + 9'd1;
+				address_ram_shifted <= address_ram_shifted + 9'd1;
+
 			
 				// Disable write enable
 				write_enable_a[0] <= 1'b0;
@@ -112,7 +109,7 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 				write_enable_b[0] <= 1'b0;
 				write_enable_b[1] <= 1'b0;
 			
-				if (address_ram0 == 9'd254) begin
+				if (address_ram == 9'd254) begin
 				
 					state <= S_LAST_WRITE;
 					
@@ -146,10 +143,8 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 			end
 			S_LAST_READ: begin
 			
-				address_ram0 <= 9'd0;
-				address_ram1 <= 9'd0;
-				address_ram0_shifted <= 9'd256;
-				address_ram1_shifted <= 9'd256;
+				address_ram <= 9'd0;
+				address_ram_shifted <= 9'd256;
 				
 				write_enable_a[0] <= 1'b0;
 				write_enable_a[1] <= 1'b0;
