@@ -11,8 +11,10 @@ add wave -divider -height 20 {internal signals}
 add wave -bin UUT/CLOCK_50_I
 add wave -bin UUT/resetn
 add wave UUT/state
-add wave -hex -unsigned UUT/read_address
-add wave -hex -unsigned UUT/write_address
+add wave -hex -unsigned UUT/address_ram0
+add wave -hex -unsigned UUT/address_ram1
+add wave -hex -unsigned UUT/address_ram0_shifted
+add wave -hex -unsigned UUT/address_ram1_shifted
 add wave -divider -height 10 {}
 add wave -bin {UUT/write_enable_a[0]}
 add wave -decimal {UUT/read_data_a[0]}
@@ -21,7 +23,7 @@ add wave -divider -height 10 {}
 add wave -bin {UUT/write_enable_b[0]}
 add wave -decimal {UUT/read_data_b[0]}
 add wave -decimal {UUT/write_data_b[0]}
-add wave -divider -height 10 {}
+add wave -divider -height 30 {}
 add wave -bin {UUT/write_enable_a[1]}
 add wave -decimal {UUT/read_data_a[1]}
 add wave -decimal {UUT/write_data_a[1]}
