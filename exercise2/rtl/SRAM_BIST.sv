@@ -76,16 +76,31 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 		end
 		
 		S_DELAY_1: begin
+			BIST_address <= 18'h3FFFC;
+			BIST_state <= S_DELAY_2;
+		end
+		
+		S_DELAY_2: begin
 			BIST_address <= BIST_address - 18'd2;
 			BIST_state <= S_READ_EVEN_CYCLE;
 		end
 		
 		S_DELAY_3: begin
+			BIST_address <= 18'h3FFFF;
+			BIST_state <= S_DELAY_4;
+		end
+		
+		S_DELAY_4: begin
 			BIST_address <= BIST_address - 18'd2;
 			BIST_state <= S_WRITE_ODD_CYCLE;
 		end
 		
 		S_DELAY_5: begin
+			BIST_address <= 18'd3;
+			BIST_state <= S_DELAY_6;
+		end
+		
+		S_DELAY_6: begin
 			BIST_address <= BIST_address + 18'd2;
 			BIST_state <= S_READ_ODD_CYCLE;
 		end
@@ -96,7 +111,7 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 			BIST_address <= BIST_address + 18'd2;
 			if (BIST_address == 18'h3FFFE) begin
 				BIST_we_n <= 1'b1;
-				BIST_address <= 18'h3FFFC;
+				BIST_address <= 18'h3FFFE;
 				BIST_state <= S_DELAY_1;
 			end
 		end
@@ -110,7 +125,7 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 			
 			if (BIST_address == 18'h0) begin
 				BIST_we_n <= 1'b0;
-				BIST_address <= 18'h3FFFF;
+				BIST_address <= 18'h0;
 				BIST_state <= S_DELAY_3;
 			end
 		end
@@ -119,7 +134,7 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 			BIST_address <= BIST_address - 18'd2;
 			if (BIST_address == 18'd1) begin
 				BIST_we_n <= 1'b1;
-				BIST_address <= 18'd3;
+				BIST_address <= 18'd1;
 				BIST_state <= S_DELAY_5;
 			end
 		end
@@ -146,9 +161,19 @@ always_ff @ (posedge Clock or negedge Resetn) begin
 				BIST_mismatch <= 1'b1;
 			end
 			
-			// finish the whole SRAM
+			BIST_finish = 1'b1;
+			BIST_state <= S_DELAY_8;
+			
+		end
+		
+		S_DELAY_8: begin
+		
+			if (BIST_read_data != BIST_expected_data_fw) begin
+				BIST_mismatch <= 1'b1;
+			end
+			
+			BIST_finish = 1'b1;
 			BIST_state <= S_IDLE;
-			BIST_finish <= 1'b1;	
 			
 		end
 		
