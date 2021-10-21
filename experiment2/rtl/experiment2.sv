@@ -294,8 +294,9 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 					
 			// Provide RGB data
 			VGA_red <= VGA_sram_data[2][15:8];
-			VGA_green <= VGA_sram_data[2][7:0];
-			VGA_blue <= VGA_sram_data[1][15:8];			
+			VGA_red_buf <= VGA_sram_data[2][7:0];
+			VGA_green <= VGA_sram_data[1][15:8];
+			VGA_blue <= VGA_sram_data[0][15:8];
 			
 			state <= S_FETCH_PIXEL_DATA_1;			
 		end
@@ -313,8 +314,8 @@ always_ff @ (posedge CLOCK_50_I or negedge resetn) begin
 			VGA_sram_data[1] <= SRAM_read_data;
 			
 			// Provide RGB data
-			VGA_red <= VGA_sram_data[1][7:0];
-			VGA_green <= VGA_sram_data[0][15:8];
+			VGA_red <= VGA_red_buf;
+			VGA_green <= VGA_sram_data[1][7:0];
 			VGA_blue <= VGA_sram_data[0][7:0];
 			
 			state <= S_FETCH_PIXEL_DATA_3;

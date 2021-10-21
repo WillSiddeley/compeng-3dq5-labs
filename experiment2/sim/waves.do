@@ -22,6 +22,7 @@ add wave -uns UUT/pixel_Y_pos
 add wave -hex UUT/VGA_red
 add wave -hex UUT/VGA_green
 add wave -hex UUT/VGA_blue
+add wave -hex UUT/VGA_red_buf
 
 # add wave -divider -height 10 {}
 # add wave -bin UUT/VGA_CLOCK_O
@@ -35,4 +36,8 @@ add wave -uns UUT/SRAM_address
 add wave -bin UUT/SRAM_we_n
 add wave -hex UUT/SRAM_read_data
 
+add wave -divider -height 30 {Internal Buffers}
+add wave -hex {UUT/VGA_sram_data[2]}
+add wave -hex {UUT/VGA_sram_data[1]}
+add wave -hex {UUT/VGA_sram_data[0]}
 
