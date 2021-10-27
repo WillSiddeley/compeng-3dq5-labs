@@ -79,7 +79,7 @@ logic [2:0] color;
 
 // internal registers
 logic [17:0] data_counter;
-logic [15:0] VGA_sram_data [4:0];
+logic [15:0] VGA_sram_data [2:0];
 
 assign resetn = ~SWITCH_I[17] && SRAM_ready;
 
