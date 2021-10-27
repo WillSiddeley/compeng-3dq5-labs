@@ -57,7 +57,7 @@ always @ (posedge Clock or negedge Resetn) begin
 			end
 			S_TXC_START_BIT: begin
 				// Send the Start bit
-				UART_TX_O <= 1'bx;
+				UART_TX_O <= 1'b0;
 				
 				TXC_state <= S_TXC_DATA;
 			end
@@ -65,7 +65,7 @@ always @ (posedge Clock or negedge Resetn) begin
 				// Repeat until all the 8 bits from  
 				// the "data_buffer" have been sent 
 				// note: LSB must be sent first
-				UART_TX_O <= 1'bx;
+				UART_TX_O <= data_buffer[data_count];
 					
 				if (data_count < 3'd7) begin
 					data_count <= data_count + 3'd1;
@@ -76,7 +76,7 @@ always @ (posedge Clock or negedge Resetn) begin
 			end
 			S_TXC_STOP_BIT: begin
 				// Send the Stop bit
-				UART_TX_O <= 1'bx;
+				UART_TX_O <= 1'b1;
 
 				Empty <= 1'b1;				
 				TXC_state <= S_TXC_IDLE;

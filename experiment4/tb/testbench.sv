@@ -132,8 +132,8 @@ module TB;
 		wait (SRAM_resetn === 1'b1);
 		repeat (3) @ (posedge clock_50);
 
-		uart_rx_generate; // slow filling of SRAM (even if baud rate is scaled up by 500/7)
-		// fill_SRAM; // fast filling of SRAM (bypassing UART SRAM interface in simulation)
+		// uart_rx_generate; // slow filling of SRAM (even if baud rate is scaled up by 500/7)
+		fill_SRAM; // fast filling of SRAM (bypassing UART SRAM interface in simulation)
 		$write("%t: SRAM is now filled (UART transmission is finished)\n\n", $realtime);
 
 		// waiting to reach back the IDLE state
