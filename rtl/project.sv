@@ -64,11 +64,39 @@ logic [17:0] VGA_base_address;
 logic [17:0] VGA_SRAM_address;
 
 // For SRAM
-logic [17:0] SRAM_address;
-logic [15:0] SRAM_write_data;
-logic SRAM_we_n;
-logic [15:0] SRAM_read_data;
-logic SRAM_ready;
+logic [17:0] SRAM_address, SRAM_address_prev, SRAM_address_RGB;
+logic [15:0] SRAM_read_data, SRAM_write_data;
+logic SRAM_ready, SRAM_we_n;
+
+// Offsets for memory
+logic [17:0] SRAM_Y_offset, SRAM_U_offset, SRAM_V_offset;
+logic [17:0] SRAM_RGB_offset;
+
+// RGB Registers
+logic [7:0] R_even, R_odd, G_even, G_odd, B_even, B_odd;
+
+// Buffers
+logic [15:0] Y_buf, U_buf, V_buf, Y, U_prime_even, U_prime_odd, V_prime_even, V_prime_odd;
+
+// Multiplier 1
+logic [31:0] Mult_op_1_1, Mult_op_2_1, Mult_result_1;
+logic [63:0] Mult_result_long_1;
+
+// Multiplier 2
+logic [31:0] Mult_op_1_2, Mult_op_2_2, Mult_result_2;
+logic [63:0] Mult_result_long_2;
+
+// Accumulation unit
+logic [31:0] U_accumulator, V_accumulator;
+logic [31:0] R_accumulator_even, G_accumulator_even, B_accumulator_even;
+logic [31:0] R_accumulator_odd, G_accumulator_odd, B_accumulator_odd;
+
+// Flags
+logic isUBuffered, isVBuffered, fromLeadIn;
+
+// Registers for CSC
+logic [15:0] U_plus_5, U_plus_3, U_plus_1, U_minus_1, U_minus_3, U_minus_5;
+logic [15:0] V_plus_5, V_plus_3, V_plus_1, V_minus_1, V_minus_3, V_minus_5;
 
 // For UART SRAM interface
 logic UART_rx_enable;
@@ -155,6 +183,19 @@ SRAM_controller SRAM_unit (
 
 assign SRAM_ADDRESS_O[19:18] = 2'b00;
 
+assign SRAM_Y_offset = 18'd0;
+assign SRAM_U_offset = 18'd38400;
+assign SRAM_V_offset = 18'd57600;
+assign SRAM_RGB_offset = 18'd146944;
+
+// Multiplier 1
+assign Mult_result_long_1 = Mult_op_1_1 * Mult_op_2_1;
+assign Mult_result_1 = Mult_result_long_1[31:0];
+
+// Multiplier 2
+assign Mult_result_long_2 = Mult_op_1_2 * Mult_op_2_2;
+assign Mult_result_2 = Mult_result_long_2[31:0];
+
 always @(posedge CLOCK_50_I or negedge resetn) begin
 	if (~resetn) begin
 		top_state <= S_IDLE;
@@ -162,6 +203,12 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 		UART_rx_initialize <= 1'b0;
 		UART_rx_enable <= 1'b0;
 		UART_timer <= 26'd0;
+		
+		SRAM_address_prev <= 18'd0;
+		SRAM_address_RGB <= 18'd0;
+		
+		isUBuffered <= 1'b0;
+		isVBuffered <= 1'b0;
 		
 		VGA_enable <= 1'b1;
 	end else begin
@@ -198,9 +245,378 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 
 			// Timeout for 1 sec on UART (detect if file transmission is finished)
 			if (UART_timer == 26'd49999999) begin
-				top_state <= S_IDLE;
+				VGA_SRAM_address <= SRAM_Y_offset + SRAM_address_prev;
+				top_state <= S_LEAD_IN_0;
 				UART_timer <= 26'd0;
 			end
+		end
+		
+		S_LEAD_IN_0: begin
+		
+			fromLeadIn <= 1'd1;
+		
+			VGA_SRAM_address <= SRAM_U_offset + SRAM_address_prev;
+			
+			top_state <= S_LEAD_IN_1;
+		
+		end
+		
+		S_LEAD_IN_1: begin
+		
+			VGA_SRAM_address <= SRAM_V_offset + SRAM_address_prev;
+			
+			SRAM_address_prev <= SRAM_address_prev + 1;
+			
+			top_state <= S_LEAD_IN_2;
+		
+		end
+		
+		S_LEAD_IN_2: begin
+		
+			VGA_SRAM_address <= SRAM_U_offset + SRAM_address_prev;
+		
+			top_state <= S_LEAD_IN_3;
+		
+		end
+		
+		S_LEAD_IN_3: begin
+		
+			VGA_SRAM_address <= SRAM_V_offset + SRAM_address_prev;
+			
+			Y <= SRAM_read_data[15:8];
+			
+			Y_buf <= SRAM_read_data[7:0];
+		
+			top_state <= S_LEAD_IN_4;
+		
+		end
+		
+		S_LEAD_IN_4: begin
+		
+			U_minus_5 <= SRAM_read_data[15:8];
+			U_minus_3 <= SRAM_read_data[15:8];
+			U_minus_1 <= SRAM_read_data[15:8];
+			U_plus_1 <= SRAM_read_data[7:0];
+		
+			top_state <= S_LEAD_IN_5;
+		
+		end
+		
+		S_LEAD_IN_5: begin
+		
+			V_minus_5 <= SRAM_read_data[15:8];
+			V_minus_3 <= SRAM_read_data[15:8];
+			V_minus_1 <= SRAM_read_data[15:8];
+			V_plus_1 <= SRAM_read_data[7:0];
+		
+			top_state <= S_LEAD_IN_6;
+		
+		end
+		
+		S_LEAD_IN_6: begin
+		
+			U_plus_3 <= SRAM_read_data[15:8];
+			U_plus_5 <= SRAM_read_data[7:0];
+		
+			top_state <= S_LEAD_IN_7;
+		
+		end
+		
+		S_LEAD_IN_7: begin
+		
+			V_plus_3 <= SRAM_read_data[15:8];
+			V_plus_5 <= SRAM_read_data[7:0];
+			
+			Mult_op_1_1 <= 159;
+			
+			Mult_op_1_2 <= (U_minus_1 + U_plus_1);
+			
+			Mult_op_2_1 <= 159;
+			
+			Mult_op_2_2 <= (V_minus_1 + V_plus_1);
+		
+			top_state <= S_CSC_US_CC_0;
+		
+		end
+		
+		///////////////////////// COMMON CASE STATES /////////////////////////
+		
+		// Current problems:
+		// Read and write states are overlapping ?
+		// Most states dont transition into the next state properly - No lead out
+		// No clipping
+		// Read in lead in is wrong
+		// top_state variable is fucked
+		// 
+	
+		
+		S_CSC_US_CC_0: begin
+		
+			if (~fromLeadIn) begin
+			
+				VGA_SRAM_address <= SRAM_RGB_offset + SRAM_address_RGB;
+				
+				SRAM_address_RGB <= SRAM_address_RGB + 1;
+			
+				UART_SRAM_write_data <= {B_even, R_odd};
+				
+				UART_SRAM_we_n <= 1'd1;
+				
+			end
+		
+			U_accumulator <= Mult_result_1 + 128;
+			
+			V_accumulator <= Mult_result_2 + 128;
+			
+			Mult_op_1_1 <= 52;
+			
+			Mult_op_1_2 <= (U_minus_3 + U_plus_3);
+			
+			Mult_op_2_1 <= 52;
+			
+			Mult_op_2_2 <= (V_minus_3 + V_plus_3);
+			
+			top_state <= S_CSC_US_CC_1;
+			
+		end
+		
+		S_CSC_US_CC_1: begin
+		
+			if (~fromLeadIn) begin
+			
+				VGA_SRAM_address <= SRAM_RGB_offset + SRAM_address_RGB;
+				
+				SRAM_address_RGB <= SRAM_address_RGB + 1;
+			
+				UART_SRAM_write_data <= {G_odd, B_odd};
+				
+				UART_SRAM_we_n <= 1'd0;
+				
+			end else begin
+			
+				fromLeadIn <= 1'd0;
+				
+			end
+			
+			U_accumulator <= U_accumulator - Mult_result_1;
+			
+			V_accumulator <= V_accumulator - Mult_result_2;
+			
+			Mult_op_1_1 <= 21;
+			
+			Mult_op_1_2 <= (U_minus_5 + U_plus_5);
+			
+			Mult_op_2_1 <= 21;
+			
+			Mult_op_2_2 <= (V_minus_5 + V_plus_5);
+			
+			top_state <= S_CSC_US_CC_2;
+		
+		end
+		
+		S_CSC_US_CC_2: begin
+				
+			VGA_SRAM_address <= SRAM_Y_offset + SRAM_address_prev;
+		
+			U_accumulator <= U_accumulator + Mult_result_1;
+			
+			V_accumulator <= V_accumulator + Mult_result_2;
+			
+			Mult_op_1_1 <= 76284;
+			
+			Mult_op_1_2 <= Y - 16;
+			
+			Mult_op_2_1 <= 76284;
+			
+			Mult_op_2_2 <= Y_buf - 16;
+			
+			top_state <= S_CSC_US_CC_3;
+		
+		end
+		
+		S_CSC_US_CC_3: begin
+		
+			// forgot divide by 65536
+		
+			VGA_SRAM_address <= SRAM_U_offset + SRAM_address_prev;
+		
+			U_prime_even <= U_minus_1;
+				
+			V_prime_even <= V_minus_1;
+				
+			U_prime_odd <= U_accumulator;
+				
+			V_prime_odd <= V_accumulator;
+				
+			R_accumulator_even <= Mult_result_1;
+			
+			G_accumulator_even <= Mult_result_1;
+			
+			B_accumulator_even <= Mult_result_1;
+			
+			R_accumulator_odd <= Mult_result_2;
+			
+			G_accumulator_odd <= Mult_result_2;
+			
+			B_accumulator_odd <= Mult_result_2;
+			
+			Mult_op_1_1 <= 104595;
+			
+			Mult_op_1_2 <= V_prime_even - 128;
+			
+			Mult_op_2_1 <= 104595;
+			
+			Mult_op_2_2 <= V_prime_odd - 128;
+			
+			top_state <= S_CSC_US_CC_4;
+		
+		end
+		
+		S_CSC_US_CC_4: begin
+		
+			VGA_SRAM_address <= SRAM_V_offset + SRAM_address_prev;
+		
+			R_accumulator_even <= R_accumulator_even + Mult_result_1;
+			
+			R_accumulator_odd <= R_accumulator_odd + Mult_result_2;
+			
+			Mult_op_1_1 <= -25624;
+			
+			Mult_op_1_2 <= U_prime_even - 128;
+			
+			Mult_op_2_1 <= -25624;
+			
+			Mult_op_2_2 <= U_prime_odd - 128;
+			
+			top_state <= S_CSC_US_CC_5;
+		
+		end
+		
+		S_CSC_US_CC_5: begin
+		
+			Y <= SRAM_read_data[15:8];
+			Y_buf <= SRAM_read_data[7:0];
+		
+			//VGA_SRAM_address <= SRAM_Y_offset + SRAM_address_prev;
+		
+			G_accumulator_even <= G_accumulator_even + Mult_result_1;
+			
+			G_accumulator_odd <= G_accumulator_odd + Mult_result_2;
+			
+			Mult_op_1_1 <= -53281;
+			
+			Mult_op_1_2 <= V_prime_even - 128;
+			
+			Mult_op_2_1 <= -53281;
+			
+			Mult_op_2_2 <= V_prime_odd - 128;
+			
+			R_even <= R_accumulator_even / 65536;
+			
+			R_odd <= R_accumulator_odd / 65536;
+			
+			top_state <= S_CSC_US_CC_6;
+		
+		end
+		
+		S_CSC_US_CC_6: begin
+		
+			U_minus_5 <= U_minus_3;
+			U_minus_3 <= U_minus_1;
+			U_minus_1 <= U_plus_1;
+			U_plus_1 <= U_plus_3;
+			U_plus_3 <= U_plus_5;
+		
+			if (~isUBuffered) begin
+			
+				U_plus_5 <= SRAM_read_data[15:8];
+				U_buf <= SRAM_read_data[7:0];
+				isUBuffered = ~isUBuffered;
+			
+			end else begin
+			
+				U_plus_5 <= U_buf;
+				isUBuffered = ~isUBuffered;
+			
+			end
+		
+			G_accumulator_even <= R_accumulator_even + Mult_result_1;
+			
+			G_accumulator_odd <= R_accumulator_odd + Mult_result_2;
+			
+			Mult_op_1_1 <= 132251;
+			
+			Mult_op_1_2 <= U_prime_even - 128;
+			
+			Mult_op_2_1 <= 132251;
+			
+			Mult_op_2_2 <= U_prime_odd - 128;
+			
+			top_state <= S_CSC_US_CC_7;
+		
+		end
+		
+		S_CSC_US_CC_7: begin
+		
+			V_minus_5 <= V_minus_3;
+			V_minus_3 <= V_minus_1;
+			V_minus_1 <= V_plus_1;
+			V_plus_1 <= V_plus_3;
+			V_plus_3 <= V_plus_5;
+		
+			if (~isVBuffered) begin
+			
+				V_plus_5 <= SRAM_read_data[15:8];
+				V_buf <= SRAM_read_data[7:0];
+				isVBuffered = ~isVBuffered;
+			
+			end else begin
+			
+				V_plus_5 <= V_buf;
+				isVBuffered = ~isVBuffered;
+			
+			end
+		
+			B_accumulator_even <= G_accumulator_even + Mult_result_1;
+			
+			B_accumulator_odd <= G_accumulator_odd + Mult_result_2;
+			
+			G_even <= G_accumulator_even / 65536;
+			
+			G_odd <= G_accumulator_odd / 65536;
+			
+			top_state <= S_CSC_US_CC_8;
+		
+		end
+		
+		S_CSC_US_CC_8: begin
+		
+			if (~fromLeadIn) begin
+			
+				VGA_SRAM_address <= SRAM_RGB_offset + SRAM_address_RGB;
+				
+				SRAM_address_RGB <= SRAM_address_RGB + 1;
+				
+				UART_SRAM_write_data <= {R_even, G_even};
+				
+				UART_SRAM_we_n <= 1'd1;
+				
+			end
+		
+			B_even <= B_accumulator_even / 65536;
+			
+			B_odd <= B_accumulator_odd / 65536;
+			
+			Mult_op_1_1 <= 159;
+			
+			Mult_op_1_2 <= (U_minus_1 + U_plus_1);
+			
+			Mult_op_2_1 <= 159;
+			
+			Mult_op_2_2 <= (V_minus_1 + V_plus_1);
+			
+			top_state <= S_CSC_US_CC_0;
+		
 		end
 
 		default: top_state <= S_IDLE;

@@ -1,9 +1,26 @@
 `ifndef DEFINE_STATE
 
 // for top state - we have more states than needed
-typedef enum logic [1:0] {
+typedef enum logic [4:0] {
 	S_IDLE,
-	S_UART_RX
+	S_UART_RX,
+	S_LEAD_IN_0,
+	S_LEAD_IN_1,
+	S_LEAD_IN_2,
+	S_LEAD_IN_3,
+	S_LEAD_IN_4,
+	S_LEAD_IN_5,
+	S_LEAD_IN_6,
+	S_LEAD_IN_7,
+	S_CSC_US_CC_0,
+	S_CSC_US_CC_1,
+	S_CSC_US_CC_2,
+	S_CSC_US_CC_3,
+	S_CSC_US_CC_4,
+	S_CSC_US_CC_5,
+	S_CSC_US_CC_6,
+	S_CSC_US_CC_7,
+	S_CSC_US_CC_8
 } top_state_type;
 
 typedef enum logic [1:0] {
