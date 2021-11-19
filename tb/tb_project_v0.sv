@@ -289,6 +289,8 @@ module TB;
 				end
 			end
 
+			$write("Writing value %x to location %d, expected value is %x \n", UUT.SRAM_write_data, UUT.SRAM_address, SRAM_ARRAY[UUT.SRAM_address]);
+
 			if (SRAM_ARRAY[UUT.SRAM_address] != UUT.SRAM_write_data) begin
 				$write("error: wrote value %d (%x hex) to location %d (%x hex), should be value %d (%x hex)\n",
 					UUT.SRAM_write_data, UUT.SRAM_write_data, UUT.SRAM_address, UUT.SRAM_address,
