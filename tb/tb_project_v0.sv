@@ -34,13 +34,13 @@ add your own.
 
 // file for comparison
 // to test milestone 2 independently, use the .sram_d1 file to check the output
-`define VERIFICATION_FILE_NAME "../data/motorcycle.sram_d0"
+`define VERIFICATION_FILE_NAME "../data/motorcycle.sram_d1"
 
 // input file for milestone 1
-`define INPUT_FILE_NAME "../data/motorcycle.sram_d1"
+//`define INPUT_FILE_NAME "../data/motorcycle.sram_d1"
 
 // input file for milestone 2
-//`define INPUT_FILE_NAME "../data/motorcycle.sram_d2"
+`define INPUT_FILE_NAME "../data/motorcycle.sram_d2"
 
 // input file for milestone 3 (full project)
 //`define INPUT_FILE_NAME "../data/motorcycle.mic15"
@@ -187,7 +187,7 @@ module TB;
 		num_unwritten_locations = 0;
 		//NOTE: this is for milestone 1, in different milestones we will be
 		//writing to different regions so modify as needed
-		for (i=146944; i<262144; i=i+1) begin
+		for (i=0; i<76800; i=i+1) begin
 			if (SRAM_ARRAY_write_count[i]==0) begin
 				if (num_unwritten_locations < `MAX_MISMATCHES) begin
 					$write("error: did not write to location %d (%x hex)\n", i, i);
@@ -258,7 +258,7 @@ module TB;
 
 		// this is only useful if decoding is done all the way through
 		// (e.g. milestone 1 is simulated together with the other milestones)
-		write_PPM_file;
+		// write_PPM_file;
 
 		#5; // delay a little bit of time before stopping (just for fun)
 
@@ -280,7 +280,7 @@ module TB;
 						 // (assuming names from experiment4 from lab 5)
 
 			// IMPORTANT: this is the "no write" memory region for milestone 1, change region for different milestones
-			if (UUT.SRAM_address < 146944) begin
+			if (UUT.SRAM_address > 76799) begin
 				if (warn_writing_out_of_region < `MAX_MISMATCHES) begin
 					$write("critical warning: writing outside of the RGB data region, may corrupt source data in SRAM\n");
 					$write("  writing value %d (%x hex) to location %d (%x hex), sim time %t\n",
@@ -311,6 +311,25 @@ module TB;
 				warn_multiple_writes_to_same_location = warn_multiple_writes_to_same_location + 1;
 			end
 		end
+
+		if (UUT.RAM_we_n_b_0 == 1'b1) begin
+
+			$write("Writing value %x to RAM0 location %d\n", UUT.RAM_write_data_b_0, UUT.RAM_address_b_0);
+
+		end
+
+		if (UUT.RAM_we_n_a_2 == 1'b1) begin
+
+			$write("Writing value %x to RAM2 location %d\n", UUT.RAM_write_data_a_2, UUT.RAM_address_a_2);
+
+		end
+
+		if (UUT.RAM_we_n_b_2 == 1'b1) begin
+
+			$write("Writing value %x to RAM2 location %d\n", UUT.RAM_write_data_b_2, UUT.RAM_address_b_2);
+
+		end
+
 	end
 
 endmodule

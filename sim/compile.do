@@ -2,6 +2,10 @@
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET +define+SIMULATION $rtl/SRAM_controller.sv
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/PB_controller.sv
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/VGA_controller.sv
+vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/dual_port_0.v
+vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/dual_port_1.v
+vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/dual_port_2.v
+vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/sampleCounter.sv
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/convert_hex_to_seven_segment.sv
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET +define+SIMULATION $rtl/UART_receive_controller.sv
 vlog -sv -work my_work +define+DISABLE_DEFAULT_NET $rtl/UART_SRAM_interface.sv
