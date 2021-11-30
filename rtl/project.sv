@@ -153,12 +153,12 @@ logic [7:0] V_plus_5, V_plus_3, V_plus_1, V_minus_1, V_minus_3, V_minus_5;
 ///////////////////////////////////////////////////////
 
 // SRAM Related
-logic [17:0] SRAM_address_M2;
+logic [17:0] SRAM_address_M2, SRAM_address_write_M2;
 logic [15:0] SRAM_write_data_M2;
 logic SRAM_we_n_M2;
 
 // M2 Memory Offsets
-logic [17:0] SRAM_pre_IDCT_offset;
+logic [17:0] SRAM_pre_IDCT_offset, SC_base_address;
 
 // For RAM
 logic [6:0] RAM_address_prev, RAM_address_sample, RAM_address_C, RAM_address_T;
@@ -179,7 +179,8 @@ logic RAM_we_n_a_2, RAM_we_n_b_2;
 logic [17:0] M2_address_generation;
 logic [5:0] M2_sample_counter, M2_SC;
 logic [2:0] M2_row_address, M2_col_address;
-logic [4:0] M2_row_index, M2_col_index;
+logic [5:0] M2_row_index, M2_col_index;
+logic [5:0] M2_row_write, M2_col_write;
 
 // M2 Fetch S
 logic [31:0] S_prime_0, S_prime_1;
@@ -203,11 +204,13 @@ logic signed [31:0] col_4_accum, col_5_accum, col_6_accum, col_7_accum;
 
 // M2 Buffers
 logic signed [15:0] S_prime_buf, CT_buf;
-logic signed [31:0] T_buf_1, T_buf_2, T_buf_3;
+logic [15:0] S_buf_1, S_buf_2, S_buf_3, S_buf_4;
+logic signed [31:0] T_buf_1, T_buf_2, T_buf_3, S_write_buf;
 
 // Flags
 logic [5:0] calculationsPerformed;
-logic sampleCounterEnabled, isFinishedBlock, isSPrimeBuffered, isTFilled, Milestone_2_finished;
+logic sampleCounterEnabled, isFinishedBlock, finBlockHold, isSPrimeBuffered, isTFilled, isSValueToWrite, isTValueToWrite, fetchedSPrime, isFinishedWritingSPrime, Milestone_2_finished;
+logic isYBlockFinished, isUBlockFinished, isVBlockFinished, switchAddrGen;
 
 ///////////////////////////////////////////////////////
 //                                                   //
@@ -326,7 +329,8 @@ sampleCounter SC (
 	.enabled(sampleCounterEnabled),
 	.colIdx(M2_col_index),
 	.rowIdx(M2_row_index),
-	.baseAddress(18'd76800),
+	.isYFinished(switchAddrGen),
+	.baseAddress(SC_base_address),
 	.sampleCounter(M2_SC),
 	.colAddress(M2_col_address),
 	.rowAddress(M2_row_address),
@@ -447,15 +451,25 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			if (UART_timer == 26'd49999999) begin
 				
 				// If there is a timeout, move to S_MILESTONE_1, S_M1_IDLE
-				//top_state <= S_MILESTONE_1;
-				//m1_state <= S_M1_IDLE;
+				
 				top_state <= S_MILESTONE_2;
 				m2_state <= S_M2_IDLE;
-			
+				
 				UART_timer <= 26'd0;
 				
 			end
 			
+		end
+		
+		S_TRANSITION: begin
+		
+			if (Milestone_2_finished) begin
+			
+				top_state <= S_MILESTONE_1;
+				m1_state <= S_M1_IDLE;
+			
+			end
+		
 		end
 		
 		S_MILESTONE_1: begin
@@ -1209,7 +1223,6 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 			///////////////////////// COMMON CASE STATES /////////////////////////
 		
 			// Current problems:
-			// YUV and YUV_buf are 16 bits (can we reduce to 8?)
 			
 			//////////////////////////////////////////////////////////////////////
 			
@@ -2584,9 +2597,20 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 					if (Milestone_2_finished) begin
 					
-						top_state <= S_IDLE;
+						top_state <= S_TRANSITION;
 				
 					end else begin
+						
+						isYBlockFinished <= 0;
+						isUBlockFinished <= 0;
+						isVBlockFinished <= 0;
+						
+						switchAddrGen <= 0;
+						
+						SC_base_address <= 18'd76800;
+						
+						M2_row_write <= 0;
+						M2_col_write <= 0;
 						
 						sampleCounterEnabled <= 1'd1;
 						
@@ -2596,6 +2620,7 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 						RAM_address_sample <= 0;
 						
 						S_prime_buf <= 0;
+						S_write_buf <= 0;
 						
 						isSPrimeBuffered <= 0;
 						
@@ -2608,6 +2633,10 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 						M2_col_index <= 0;
 						
 						calculationsPerformed <= 0;
+						
+						SRAM_address_write_M2 <= 0;
+						
+						isSValueToWrite <= 0;
 						
 						colAccum_1 <= 0;
 						colAccum_2 <= 0;
@@ -2812,17 +2841,14 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_LEAD_IN_8: begin
 				
-					RAM_we_n_a_0 = 1'd0;
-					RAM_we_n_b_0 = 1'd0;
+					RAM_we_n_a_0 <= 1'd0;
+					RAM_we_n_b_0 <= 1'd0;
 				
 					m2_state <= S_M2_LEAD_IN_9;
 				
 				end
 				
 				S_M2_LEAD_IN_9: begin
-				
-					// We will reuse this register (setting to 0 for clarity)
-					S_prime_buf <= 0;
 				
 					m2_state <= S_M2_CC_0;
 				
@@ -2839,6 +2865,8 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 					// to instead multiply the first row of S'
 					// with the first row of C transpose
 					
+					isTValueToWrite <= 0;
+					
 					// Read the first S' value from RAM (NOTE: S' is PACKED)
 					RAM_address_a_0 <= RAM_address_sample;
 					
@@ -2850,18 +2878,36 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 					RAM_address_C <= RAM_address_C + 4;
 					
 					// Set the RAM to read
-					RAM_we_n_a_0 = 0;
-					RAM_we_n_b_0 = 0;
+					RAM_we_n_a_0 <= 0;
+					RAM_we_n_b_0 <= 0;
 					
 					// Set the RAM to read
-					RAM_we_n_a_1 = 0;
-					RAM_we_n_b_1 = 0;
+					RAM_we_n_a_1 <= 0;
+					RAM_we_n_b_1 <= 0;
 					
 					// Set the RAM to read
-					RAM_we_n_a_2 = 0;
-					RAM_we_n_b_2 = 0;
+					RAM_we_n_a_2 <= 0;
+					RAM_we_n_b_2 <= 0;
 					
-					m2_state <= S_M2_CC_1;
+					// Set the SRAM to read
+					SRAM_we_n_M2 <= 1'b1;
+					
+					// We will reuse this register (setting to 0 for clarity)
+					S_prime_buf <= 0;
+					
+					fetchedSPrime <= 0;
+					
+					if (isYBlockFinished && isUBlockFinished && isVBlockFinished) begin
+						
+						Milestone_2_finished <= 1;
+						
+						m2_state <= S_M2_IDLE;
+						
+					end else begin
+						
+						m2_state <= S_M2_CC_1;
+						
+					end
 					
 				end
 				
@@ -2879,46 +2925,80 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				end
 				
 				S_M2_CC_2: begin
-				
-					// Read the third row of 3 C values from RAM (NOTE: C is PACKED)
-					RAM_address_a_1 <= RAM_address_C;
-					RAM_address_b_1 <= RAM_address_C + 1;
 					
-					// Increment the addresses
-					RAM_address_C <= RAM_address_C + 4;
+					// Update accumulators
+					colAccum_1 <= 0;
+					colAccum_2 <= 0;
+					colAccum_3 <= 0;
 					
-					// Buffer S_prime other sample
-					S_prime_buf <= RAM_read_data_a_0[15: 0];
+					// Update buffers
+					T_buf_1 <= colAccum_1 + Mult_result_3;
+					T_buf_2 <= colAccum_2 + Mult_result_4;
 					
-					// Read the next sample
-					RAM_address_a_0 <= RAM_address_sample + 1;
+					if (isTValueToWrite) begin
 					
-					// Increment sample counter
-					RAM_address_sample <= RAM_address_sample + 1;
-					
-					if (RAM_read_data_a_0[31] == 1'b1) begin
-					
-						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
-					
-						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+						// Write 2 of the 2 values to RAM2
+						RAM_we_n_a_2 <= 1'b1;
+						RAM_we_n_b_2 <= 1'b1;
 						
-						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
-					
-					end else begin
-					
-						Mult_op_3_1 <= RAM_read_data_a_0[31:16];
-					
-						Mult_op_4_1 <= RAM_read_data_a_0[31:16];
+						RAM_address_a_2 <= RAM_address_T;
+						RAM_address_b_2 <= RAM_address_T + 1;
 						
-						Mult_op_5_1 <= RAM_read_data_a_0[31:16];
+						RAM_write_data_a_2 <= (colAccum_1 + Mult_result_3) >>> 8;
+						RAM_write_data_b_2 <= (colAccum_2 + Mult_result_4) >>> 8;
+						
+						// Write 1 of the 2 values to RAM0
+						RAM_we_n_b_0 <= 1'b1;
+						
+						RAM_address_b_0 <= RAM_address_T;
+						
+						RAM_write_data_b_0 <= (colAccum_1 + Mult_result_3) >>> 8;
 						
 					end
 					
-					Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
-				
-					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15: 0]} : RAM_read_data_a_1[15: 0];
+					if (calculationsPerformed != 8) begin
 					
-					Mult_op_5_2 <= (RAM_read_data_b_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[31:16]} : RAM_read_data_b_1[31:16];
+						// Read the third row of 3 C values from RAM (NOTE: C is PACKED)
+						RAM_address_a_1 <= RAM_address_C;
+						RAM_address_b_1 <= RAM_address_C + 1;
+						
+						// Increment the addresses
+						RAM_address_C <= RAM_address_C + 4;
+						
+						// Buffer S_prime other sample
+						S_prime_buf <= RAM_read_data_a_0[15: 0];
+						
+						// Read the next sample
+						RAM_address_a_0 <= RAM_address_sample + 1;
+						
+						// Increment sample counter
+						RAM_address_sample <= RAM_address_sample + 1;
+						
+						if (RAM_read_data_a_0[31] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+						
+						end else begin
+						
+							Mult_op_3_1 <= RAM_read_data_a_0[31:16];
+						
+							Mult_op_4_1 <= RAM_read_data_a_0[31:16];
+							
+							Mult_op_5_1 <= RAM_read_data_a_0[31:16];
+							
+						end
+						
+						Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15: 0]} : RAM_read_data_a_1[15: 0];
+						
+						Mult_op_5_2 <= (RAM_read_data_b_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[31:16]} : RAM_read_data_b_1[31:16];
+					
+					end
 					
 					m2_state <= S_M2_CC_3;
 				
@@ -2926,43 +3006,88 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_3: begin
 				
-					// Update the accumulators
-					colAccum_1 <= colAccum_1 + Mult_result_3;
-					colAccum_2 <= colAccum_2 + Mult_result_4;
-					colAccum_3 <= colAccum_3 + Mult_result_5;
-				
-					// Read the fourth row of 3 C values from RAM (NOTE: C is PACKED)
-					RAM_address_a_1 <= RAM_address_C;
-					RAM_address_b_1 <= RAM_address_C + 1;
+					if (isTValueToWrite) begin
 					
-					// Increment the addresses
-					RAM_address_C <= RAM_address_C + 4;
-					
-					if (S_prime_buf[15] == 1'b1) begin
-					
-						Mult_op_3_1 <= {{16{1'b1}}, S_prime_buf};
-					
-						Mult_op_4_1 <= {{16{1'b1}}, S_prime_buf};
+						// Write the last of the 3 values to RAM0
+						RAM_we_n_b_0 <= 1'b1;
+							
+						RAM_address_b_0 <= RAM_address_T + 1;
+							
+						RAM_write_data_b_0 <= T_buf_2 >>> 8;
+							
+						RAM_address_T <= RAM_address_T + 2;
 						
-						Mult_op_5_1 <= {{16{1'b1}}, S_prime_buf};
-					
-					end else begin
-					
-						Mult_op_3_1 <= S_prime_buf;
-					
-						Mult_op_4_1 <= S_prime_buf;
-						
-						Mult_op_5_1 <= S_prime_buf;
+						isTValueToWrite <= 0;
 					
 					end
-					
-					Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
 				
-					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15: 0]} : RAM_read_data_a_1[15: 0];
+					if (calculationsPerformed != 8) begin
+				
+						// Update the accumulators
+						colAccum_1 <= colAccum_1 + Mult_result_3;
+						colAccum_2 <= colAccum_2 + Mult_result_4;
+						colAccum_3 <= colAccum_3 + Mult_result_5;
 					
-					Mult_op_5_2 <= (RAM_read_data_b_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[31:16]} : RAM_read_data_b_1[31:16];
+						// Read the fourth row of 3 C values from RAM (NOTE: C is PACKED)
+						RAM_address_a_1 <= RAM_address_C;
+						RAM_address_b_1 <= RAM_address_C + 1;
+						
+						// Increment the addresses
+						RAM_address_C <= RAM_address_C + 4;
+						
+						if (S_prime_buf[15] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, S_prime_buf};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, S_prime_buf};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, S_prime_buf};
+						
+						end else begin
+						
+							Mult_op_3_1 <= S_prime_buf;
+						
+							Mult_op_4_1 <= S_prime_buf;
+							
+							Mult_op_5_1 <= S_prime_buf;
+						
+						end
+						
+						Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
 					
-					m2_state <= S_M2_CC_4;
+						Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15: 0]} : RAM_read_data_a_1[15: 0];
+						
+						Mult_op_5_2 <= (RAM_read_data_b_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[31:16]} : RAM_read_data_b_1[31:16];
+						
+						m2_state <= S_M2_CC_4;
+						
+					end else begin
+								
+						calculationsPerformed <= 0;
+					
+						RAM_address_sample <= 32;
+						
+						RAM_address_T <= 64;
+						
+						colAccum_1 <= 0;
+						colAccum_2 <= 0;
+						colAccum_3 <= 0;
+						
+						// Set the RAM to read
+						RAM_we_n_a_0 <= 0;
+						RAM_we_n_b_0 <= 0;
+						
+						// Set the RAM to read
+						RAM_we_n_a_1 <= 0;
+						RAM_we_n_b_1 <= 0;
+						
+						// Set the RAM to read
+						RAM_we_n_a_2 <= 0;
+						RAM_we_n_b_2 <= 0;
+						
+						m2_state <= S_M2_S_TRANSITION_0;
+						
+					end
 				
 				end
 				
@@ -3617,6 +3742,53 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				end
 				
 				S_M2_CC_17: begin
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+					
+					// Read the second row of 3 C values from RAM (NOTE: C is PACKED)
+					RAM_address_a_1 <= RAM_address_C;
+					RAM_address_b_1 <= RAM_address_C + 1;
+					
+					// Increment the addresses
+					RAM_address_C <= RAM_address_C + 4;
+					
+					if (S_prime_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, S_prime_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, S_prime_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, S_prime_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= S_prime_buf;
+					
+						Mult_op_4_1 <= S_prime_buf;
+						
+						Mult_op_5_1 <= S_prime_buf;
+					
+					end
+					
+					Mult_op_3_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15: 0]} : RAM_read_data_a_1[15: 0];
+				
+					Mult_op_4_2 <= (RAM_read_data_b_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[31:16]} : RAM_read_data_b_1[31:16];
+					
+					Mult_op_5_2 <= (RAM_read_data_b_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_b_1[15: 0]} : RAM_read_data_b_1[15: 0];
+				
+					m2_state <= S_M2_CC_18;
+				
+				end
+				
+				S_M2_CC_18: begin
+				
+					// Update the accumulators
+					colAccum_1 <= 0;
+					colAccum_2 <= 0;
+					colAccum_3 <= 0;
 				
 					// Update buffers
 					T_buf_1 <= colAccum_1 + Mult_result_3;
@@ -3639,62 +3811,6 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 					RAM_address_b_0 <= RAM_address_T;
 					
 					RAM_write_data_b_0 <= (colAccum_1 + Mult_result_3) >>> 8;
-				
-					// Update the accumulators
-					colAccum_1 <= 0;
-					colAccum_2 <= 0;
-					colAccum_3 <= 0;
-					
-					// Read the second row of 3 C values from RAM (NOTE: C is PACKED)
-					RAM_address_a_1 <= RAM_address_C;
-					
-					// Increment the addresses
-					RAM_address_C <= RAM_address_C + 4;
-					
-					if (S_prime_buf[15] == 1'b1) begin
-					
-						Mult_op_3_1 <= {{16{1'b1}}, S_prime_buf};
-					
-						Mult_op_4_1 <= {{16{1'b1}}, S_prime_buf};
-					
-					end else begin
-					
-						Mult_op_3_1 <= S_prime_buf;
-					
-						Mult_op_4_1 <= S_prime_buf;
-						
-						Mult_op_5_1 <= S_prime_buf;
-					
-					end
-					
-					Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
-				
-					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15:0]} : RAM_read_data_a_1[15:0];
-				
-					m2_state <= S_M2_CC_18;
-				
-				end
-				
-				S_M2_CC_18: begin
-				
-					// Write the last of the 3 values to RAM2
-					RAM_we_n_a_2 <= 1'b1;
-					RAM_we_n_b_2 <= 1'b1;
-					
-					RAM_address_a_2 <= RAM_address_T + 2;
-					
-					RAM_write_data_a_2 <= T_buf_3 >>> 8;
-					
-					// Write 1 of the 3 values to RAM0
-					RAM_we_n_b_0 <= 1'b1;
-					
-					RAM_address_b_0 <= RAM_address_T + 1;
-					
-					RAM_write_data_b_0 <= T_buf_2 >>> 8;
-				
-					// Update the accumulators
-					colAccum_1 <= colAccum_1 + Mult_result_3;
-					colAccum_2 <= colAccum_2 + Mult_result_4;
 					
 					// Read the third row of 3 C values from RAM (NOTE: C is PACKED)
 					RAM_address_a_1 <= RAM_address_C;
@@ -3735,19 +3851,25 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_19: begin
 				
-					// Write the last of the 3 values to RAM0
+					// Write the last of the 3 values to RAM2
+					RAM_we_n_a_2 <= 1'b1;
+					RAM_we_n_b_2 <= 1'b1;
+					
+					RAM_address_a_2 <= RAM_address_T + 2;
+					
+					RAM_write_data_a_2 <= T_buf_3 >>> 8;
+					
+					// Write 1 of the 3 values to RAM0
 					RAM_we_n_b_0 <= 1'b1;
 					
-					RAM_address_b_0 <= RAM_address_T + 2;
+					RAM_address_b_0 <= RAM_address_T + 1;
 					
-					RAM_write_data_b_0 <= T_buf_3 >>> 8;
-					
-					RAM_address_T <= RAM_address_T + 3;
+					RAM_write_data_b_0 <= T_buf_2 >>> 8;
 				
 					// Update the accumulators
 					colAccum_1 <= colAccum_1 + Mult_result_3;
 					colAccum_2 <= colAccum_2 + Mult_result_4;
-					
+			
 					// Read the fourth row of 3 C values from RAM (NOTE: C is PACKED)
 					RAM_address_a_1 <= RAM_address_C;
 					
@@ -3779,6 +3901,15 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				end
 
 				S_M2_CC_20: begin
+				
+					// Write the last of the 3 values to RAM0
+					RAM_we_n_b_0 <= 1'b1;
+					
+					RAM_address_b_0 <= RAM_address_T + 2;
+					
+					RAM_write_data_b_0 <= T_buf_3 >>> 8;
+					
+					RAM_address_T <= RAM_address_T + 3;
 				
 					// Update the accumulators
 					colAccum_1 <= colAccum_1 + Mult_result_3;
@@ -3933,98 +4064,67 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15:0]} : RAM_read_data_a_1[15:0];
 				
 					m2_state <= S_M2_CC_24;
-				
+					
 				end
 				
 				S_M2_CC_24: begin
 				
-					calculationsPerformed <= calculationsPerformed + 1;
-				
-					// Update buffers
-					T_buf_1 <= colAccum_1 + Mult_result_3;
-					T_buf_2 <= colAccum_2 + Mult_result_4;
-	
-					// Write 2 of the 2 values to RAM2
-					RAM_we_n_a_2 <= 1'b1;
-					RAM_we_n_b_2 <= 1'b1;
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
 					
-					RAM_address_a_2 <= RAM_address_T;
-					RAM_address_b_2 <= RAM_address_T + 1;
-					
-					RAM_write_data_a_2 <= (colAccum_1 + Mult_result_3) >>> 8;
-					RAM_write_data_b_2 <= (colAccum_2 + Mult_result_4) >>> 8;
-					
-					// Write 1 of the 2 values to RAM0
-					RAM_we_n_b_0 <= 1'b1;
-					
-					RAM_address_b_0 <= RAM_address_T;
-					
-					RAM_write_data_b_0 <= (colAccum_1 + Mult_result_3) >>> 8;
-				
 					if (calculationsPerformed != 7) begin
 					
-						// Update the accumulators
-						colAccum_1 <= 0;
-						colAccum_2 <= 0;
-						
-						// Read the first S' value from RAM (NOTE: S' is PACKED)
-						RAM_address_a_0 <= RAM_address_sample + 1;
-						
-						// Increment sample address
-						RAM_address_sample <= RAM_address_sample + 1;
-						
 						// Read the first row of 3 C values from RAM (NOTE: C is PACKED)
 						RAM_address_a_1 <= RAM_address_C;
 						RAM_address_b_1 <= RAM_address_C + 1;
 						
 						// Increment the addresses
 						RAM_address_C <= RAM_address_C + 4;
-					
+						
+						// Buffer S_prime other sample
+						S_prime_buf <= RAM_read_data_a_0[15: 0];
+						
+						// Read the first S' value from RAM (NOTE: S' is PACKED)
+						RAM_address_a_0 <= RAM_address_sample + 1;
+						
+						// Increment sample counter
+						RAM_address_sample <= RAM_address_sample + 1;
+						
 					end
+					
+					if (RAM_read_data_a_0[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_0[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_0[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
 				
+					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15:0]} : RAM_read_data_a_1[15:0];
+	
 					m2_state <= S_M2_CC_25;
 				
 				end
 				
 				S_M2_CC_25: begin
 				
-					// Write the last of the 3 values to RAM0
-					RAM_we_n_b_0 <= 1'b1;
-						
-					RAM_address_b_0 <= RAM_address_T + 1;
-						
-					RAM_write_data_b_0 <= T_buf_2 >>> 8;
-						
-					RAM_address_T <= RAM_address_T + 2;
+					calculationsPerformed <= calculationsPerformed + 1;
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
 				
-					if (calculationsPerformed == 8) begin
-					
-						// Milestone_2_finished <= 1'b1;
-						
-						RAM_address_sample <= 32;
-						
-						RAM_address_T <= 64;
-						
-						colAccum_1 <= 0;
-						colAccum_2 <= 0;
-						colAccum_3 <= 0;
-						
-						// Set the RAM to read
-						RAM_we_n_a_0 = 0;
-						RAM_we_n_b_0 = 0;
-						
-						// Set the RAM to read
-						RAM_we_n_a_1 = 0;
-						RAM_we_n_b_1 = 0;
-						
-						// Set the RAM to read
-						RAM_we_n_a_2 = 0;
-						RAM_we_n_b_2 = 0;
-						
-						m2_state <= S_M2_S_TRANSITION_0;
-					
-					end else begin
-					
+					if (calculationsPerformed != 7) begin
+				
 						// Read the second row of 3 C values from RAM (NOTE: C is PACKED)
 						RAM_address_a_1 <= RAM_address_C;
 						RAM_address_b_1 <= RAM_address_C + 1;
@@ -4032,39 +4132,92 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 						// Increment the addresses
 						RAM_address_C <= RAM_address_C + 4;
 						
-						m2_state <= S_M2_CC_2;
-						
 					end
+					
+					if (S_prime_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, S_prime_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, S_prime_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= S_prime_buf;
+					
+						Mult_op_4_1 <= S_prime_buf;
+						
+						Mult_op_5_1 <= S_prime_buf;
+					
+					end
+					
+					Mult_op_3_2 <= (RAM_read_data_a_1[31] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[31:16]} : RAM_read_data_a_1[31:16];
+				
+					Mult_op_4_2 <= (RAM_read_data_a_1[15] == 1'b1) ? {{16{1'b1}}, RAM_read_data_a_1[15:0]} : RAM_read_data_a_1[15:0];
+				
+					isTValueToWrite <= 1;
+				
+					m2_state <= S_M2_CC_2;
 				
 				end
 				
 				S_M2_S_TRANSITION_0: begin
 				
+					// Update buffers
+					T_buf_1 <= colAccum_1 + Mult_result_3;
+					T_buf_2 <= colAccum_2 + Mult_result_4;
+				
 					// The computation of T is complete
 					// Matrix multiplication can now begin for S
 					
 					// Read the first CT value from RAM (NOTE: S' is PACKED)
-					RAM_address_a_0 <= RAM_address_sample;
+					RAM_address_a_1 <= RAM_address_sample;
 					
 					// Read the first row of 3 T values from RAM
-					RAM_address_a_0 <= RAM_address_T
+					RAM_address_b_0 <= RAM_address_T;
 					RAM_address_a_2 <= RAM_address_T + 1;
 					RAM_address_b_2 <= RAM_address_T + 2;
 					
 					// Increment the addresses
-					RAM_address_T <= RAM_address_T + 4;
+					RAM_address_T <= RAM_address_T + 8;
 					
 					// Set the RAM to read
-					RAM_we_n_a_0 = 0;
-					RAM_we_n_b_0 = 0;
+					RAM_we_n_a_0 <= 0;
+					RAM_we_n_b_0 <= 0;
 					
 					// Set the RAM to read
-					RAM_we_n_a_1 = 0;
-					RAM_we_n_b_1 = 0;
+					RAM_we_n_a_1 <= 0;
+					RAM_we_n_b_1 <= 0;
 					
 					// Set the RAM to read
-					RAM_we_n_a_2 = 0;
-					RAM_we_n_b_2 = 0;
+					RAM_we_n_a_2 <= 0;
+					RAM_we_n_b_2 <= 0;
+					
+					// Set this to 0 for next S' read
+					isSPrimeBuffered <= 1'b0;
+					
+					// Set the write address to 0
+					RAM_address_prev <= 0;
+					
+					if (!isYBlockFinished) begin
+					
+						// Set the write address to the current block
+						SRAM_address_write_M2 <= {M2_row_write, 9'b0} + {M2_row_write, 9'b0} + {M2_row_write, 8'b0} + {M2_col_write, 2'b0};
+					
+					end
+					
+					if (isYBlockFinished && !isUBlockFinished) begin
+					
+						// Set the write address to the current block
+						SRAM_address_write_M2 <= 38400 + {M2_row_write, 9'b0} + {M2_row_write, 7'b0} + {M2_col_write, 2'b0};
+					
+					end
+					
+					if (isYBlockFinished && isUBlockFinished && !isVBlockFinished) begin
+					
+						// Set the write address to the current block
+						SRAM_address_write_M2 <= 57600 + {M2_row_write, 9'b0} + {M2_row_write, 7'b0} + {M2_col_write, 2'b0};
+					
+					end
 					
 					m2_state <= S_M2_S_TRANSITION_1;
 				
@@ -4073,12 +4226,12 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				S_M2_S_TRANSITION_1: begin
 				
 					// Read the second row of 3 T values from RAM
-					RAM_address_a_0 <= RAM_address_T
+					RAM_address_b_0 <= RAM_address_T;
 					RAM_address_a_2 <= RAM_address_T + 1;
 					RAM_address_b_2 <= RAM_address_T + 2;
 					
 					// Increment the addresses
-					RAM_address_T <= RAM_address_T + 4;
+					RAM_address_T <= RAM_address_T + 8;
 					
 					m2_state <= S_M2_CC_S_0;
 				
@@ -4087,41 +4240,45 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				S_M2_CC_S_0: begin
 				
 					// Read the third row of 3 T values from RAM
-					RAM_address_a_0 <= RAM_address_T
+					RAM_address_b_0 <= RAM_address_T;
 					RAM_address_a_2 <= RAM_address_T + 1;
 					RAM_address_b_2 <= RAM_address_T + 2;
 					
 					// Increment the addresses
-					RAM_address_T <= RAM_address_T + 4;
+					RAM_address_T <= RAM_address_T + 8;
 					
 					// Buffer S_prime other sample
-					CT_buf <= RAM_read_data_a_0[15: 0];
+					CT_buf <= RAM_read_data_a_1[15: 0];
 					
 					// Read the next sample
-					RAM_address_a_0 <= RAM_address_sample + 1;
+					RAM_address_a_1 <= RAM_address_sample + 1;
 					
 					// Increment sample counter
 					RAM_address_sample <= RAM_address_sample + 1;
 					
-					if (RAM_read_data_a_0[31] == 1'b1) begin
+					isFinishedWritingSPrime <= 0;
 					
-						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+					finBlockHold <= 0;
 					
-						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
 						
-						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_0[31:16]};
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
 					
 					end else begin
 					
-						Mult_op_3_1 <= RAM_read_data_a_0[31:16];
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
 					
-						Mult_op_4_1 <= RAM_read_data_a_0[31:16];
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
 						
-						Mult_op_5_1 <= RAM_read_data_a_0[31:16];
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
 						
 					end
 					
-					Mult_op_3_2 <= RAM_read_data_a_0;
+					Mult_op_3_2 <= RAM_read_data_b_0;
 				
 					Mult_op_4_2 <= RAM_read_data_a_2;
 					
@@ -4133,18 +4290,526 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_1: begin
 				
+					if (isSValueToWrite) begin
+					
+						if (T_buf_1[31] == 1'b1) begin
+					
+							if (T_buf_2[31] == 1'b1) begin
+							
+								S_buf_4 <= {8'd0, 8'd0};
+							
+							end else begin
+							
+								if (T_buf_2[30:24] == 7'b0000000) begin
+								
+									S_buf_4 <= {8'd0, T_buf_2[23:16]};
+							
+								end else begin
+								
+									S_buf_4 <= {8'd0, 8'd255};
+									
+								end
+							
+							end
+						
+						end else begin
+						
+							if (T_buf_2[31] == 1'b1) begin
+							
+								if (T_buf_1[30:24] == 7'b0000000) begin
+								
+									S_buf_4 <= {T_buf_1[23:16], 8'd0};
+							
+								end else begin
+								
+									S_buf_4 <= {8'd255, 8'd0};
+									
+								end
+							
+							end else begin
+							
+								if (T_buf_1[30:24] == 7'b0000000) begin
+								
+									if (T_buf_2[30:24] == 7'b0000000) begin
+									
+										S_buf_4 <= {T_buf_1[23:16], T_buf_2[23:16]};
+									
+									end else begin
+									
+										S_buf_4 <= {T_buf_1[23:16], 8'd255};
+									
+									end
+							
+								end else begin
+								
+									if (T_buf_2[30:24] == 7'b0000000) begin
+									
+										S_buf_4 <= {8'd255, T_buf_2[23:16]};
+									
+									end else begin
+									
+										S_buf_4 <= {8'd255, 8'd255};
+									
+									end
+									
+								end
+							
+							end
+						
+						end
+						
+						SRAM_address_M2 <= SRAM_address_write_M2;
+						
+						SRAM_write_data_M2 <= S_buf_1;
+					
+						SRAM_we_n_M2 <= 1'b0;
+						
+					end
+					
+					if (calculationsPerformed != 8) begin
+				
+						// Update the accumulators
+						colAccum_1 <= colAccum_1 + Mult_result_3;
+						colAccum_2 <= colAccum_2 + Mult_result_4;
+						colAccum_3 <= colAccum_3 + Mult_result_5;
+					
+						// Read the fourth row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						if (CT_buf[15] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+						
+						end else begin
+						
+							Mult_op_3_1 <= CT_buf;
+						
+							Mult_op_4_1 <= CT_buf;
+							
+							Mult_op_5_1 <= CT_buf;
+						
+						end
+						
+						Mult_op_3_2 <= RAM_read_data_b_0;
+					
+						Mult_op_4_2 <= RAM_read_data_a_2;
+						
+						Mult_op_5_2 <= RAM_read_data_b_2;
+						
+					end
+					
+					m2_state <= S_M2_CC_S_2;
+				
+				end
+				
+				S_M2_CC_S_2: begin
+				
+					if (isSValueToWrite) begin
+					
+						SRAM_address_M2 <= SRAM_address_write_M2 + 1;
+						
+						SRAM_write_data_M2 <= S_buf_2;
+					
+						SRAM_we_n_M2 <= 1'b0;
+						
+					end
+					
+					if (calculationsPerformed != 8) begin
+				
+						// Update the accumulators
+						colAccum_1 <= colAccum_1 + Mult_result_3;
+						colAccum_2 <= colAccum_2 + Mult_result_4;
+						colAccum_3 <= colAccum_3 + Mult_result_5;
+						
+						// Read the fifth row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						// Buffer S_prime other sample
+						CT_buf <= RAM_read_data_a_1[15: 0];
+						
+						// Read the next sample
+						RAM_address_a_1 <= RAM_address_sample + 1;
+						
+						// Increment sample counter
+						RAM_address_sample <= RAM_address_sample + 1;
+						
+						if (RAM_read_data_a_1[31] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						end else begin
+						
+							Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+						
+							Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+							
+							Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+							
+						end
+						
+						Mult_op_3_2 <= RAM_read_data_b_0;
+					
+						Mult_op_4_2 <= RAM_read_data_a_2;
+						
+						Mult_op_5_2 <= RAM_read_data_b_2;
+					
+					end
+				
+					m2_state <= S_M2_CC_S_3;
+				
+				end
+				
+				S_M2_CC_S_3: begin
+				
+					if (isSValueToWrite) begin
+					
+						SRAM_address_M2 <= SRAM_address_write_M2 + 2;
+						
+						SRAM_write_data_M2 <= S_buf_3;
+					
+						SRAM_we_n_M2 <= 1'b0;
+						
+					end
+					
+					if (calculationsPerformed != 8) begin
+				
+						// Update the accumulators
+						colAccum_1 <= colAccum_1 + Mult_result_3;
+						colAccum_2 <= colAccum_2 + Mult_result_4;
+						colAccum_3 <= colAccum_3 + Mult_result_5;
+					
+						// Read the sixth row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						if (CT_buf[15] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+						
+						end else begin
+						
+							Mult_op_3_1 <= CT_buf;
+						
+							Mult_op_4_1 <= CT_buf;
+							
+							Mult_op_5_1 <= CT_buf;
+						
+						end
+						
+						Mult_op_3_2 <= RAM_read_data_b_0;
+					
+						Mult_op_4_2 <= RAM_read_data_a_2;
+						
+						Mult_op_5_2 <= RAM_read_data_b_2;
+				
+					end
+				
+					m2_state <= S_M2_CC_S_4;
+				
+				end
+				
+				S_M2_CC_S_4: begin
+				
+					if (isSValueToWrite) begin
+					
+						SRAM_address_M2 <= SRAM_address_write_M2 + 3;
+						
+						SRAM_write_data_M2 <= S_buf_4;
+					
+						SRAM_we_n_M2 <= 1'b0;
+						
+						isSValueToWrite <= 0;
+						
+						if (!isYBlockFinished) begin
+						
+							SRAM_address_write_M2 <= SRAM_address_write_M2 + 160;
+						
+						end else begin
+						
+							SRAM_address_write_M2 <= SRAM_address_write_M2 + 80;
+						
+						end
+						
+					end
+					
+					if (calculationsPerformed != 8) begin
+				
+						// Update the accumulators
+						colAccum_1 <= colAccum_1 + Mult_result_3;
+						colAccum_2 <= colAccum_2 + Mult_result_4;
+						colAccum_3 <= colAccum_3 + Mult_result_5;
+						
+						// Read the seventh row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						// Buffer S_prime other sample
+						CT_buf <= RAM_read_data_a_1[15: 0];
+						
+						// Read the next sample
+						RAM_address_a_1 <= RAM_address_sample + 1;
+						
+						// Increment sample counter
+						RAM_address_sample <= RAM_address_sample + 1;
+						
+						if (RAM_read_data_a_1[31] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						end else begin
+						
+							Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+						
+							Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+							
+							Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+							
+						end
+						
+						Mult_op_3_2 <= RAM_read_data_b_0;
+					
+						Mult_op_4_2 <= RAM_read_data_a_2;
+						
+						Mult_op_5_2 <= RAM_read_data_b_2;
+						
+						m2_state <= S_M2_CC_S_5;
+						
+					end else begin
+					
+						if (!isYBlockFinished) begin
+						
+							if (M2_col_index == 39) begin
+							
+								M2_col_index <= 0;
+								
+								if (M2_row_index == 29) begin
+								
+									M2_col_index <= 0;
+									
+									M2_row_index <= 0;
+									
+									switchAddrGen <= 1;
+									
+									SC_base_address <= 18'd153600;
+									
+								end else begin
+								
+									M2_row_index <= M2_row_index + 1;
+									
+								end
+								
+							end else begin
+							
+								M2_col_index <= M2_col_index + 1;
+								
+							end
+						
+						end else begin
+						
+							if (!isUBlockFinished) begin
+						
+								if (M2_col_index == 19) begin
+								
+									M2_col_index <= 0;
+									
+									if (M2_row_index == 29) begin
+									
+										M2_col_index <= 0;
+										
+										M2_row_index <= 0;
+										
+										SC_base_address <= 18'd192000;
+									
+									end else begin
+									
+										M2_row_index <= M2_row_index + 1;
+										
+									end
+									
+								end else begin
+								
+									M2_col_index <= M2_col_index + 1;
+									
+								end
+								
+							end else begin
+							
+								if (M2_col_index == 19) begin
+								
+									M2_col_index <= 0;
+									
+									if (M2_row_index == 29) begin
+									
+										M2_col_index <= 0;
+										
+										M2_row_index <= 0;
+										
+										SC_base_address <= 18'd76800;
+									
+									end else begin
+									
+										M2_row_index <= M2_row_index + 1;
+										
+									end
+									
+								end else begin
+								
+									M2_col_index <= M2_col_index + 1;
+									
+								end
+							
+							end
+						
+						end
+						
+						calculationsPerformed <= 0;
+						
+						RAM_address_T <= 64;
+						
+						RAM_address_C <= 0;
+						
+						RAM_address_sample <= 0;
+						
+						if (!isYBlockFinished) begin
+						
+							if (M2_col_write == 39) begin
+						
+								M2_col_write <= 0;
+								
+								if (M2_row_write == 29) begin
+								
+									M2_row_write <= 0;
+									
+									isYBlockFinished <= 1;
+									
+								end else begin
+								
+									M2_row_write <= M2_row_write + 1;
+							
+								end
+								
+							end else begin
+							
+								M2_col_write <= M2_col_write + 1;
+							
+							end
+						
+						end else begin
+						
+							if (!isUBlockFinished) begin
+						
+								if (M2_col_write == 19) begin
+							
+									M2_col_write <= 0;
+									
+									if (M2_row_write == 29) begin
+									
+										M2_row_write <= 0;
+										
+										isUBlockFinished <= 1;
+										
+									end else begin
+									
+										M2_row_write <= M2_row_write + 1;
+								
+									end
+									
+								end else begin
+								
+									M2_col_write <= M2_col_write + 1;
+								
+								end
+								
+							end else begin
+							
+								if (M2_col_write == 19) begin
+							
+									M2_col_write <= 0;
+									
+									if (M2_row_write == 29) begin
+									
+										M2_row_write <= 0;
+										
+										isVBlockFinished <= 1;
+										
+									end else begin
+									
+										M2_row_write <= M2_row_write + 1;
+								
+									end
+									
+								end else begin
+								
+									M2_col_write <= M2_col_write + 1;
+								
+								end
+							
+							end
+						
+						end
+						
+						m2_state <= S_M2_CC_0;
+	
+					end
+				
+				end
+				
+				S_M2_CC_S_5: begin
+					
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						sampleCounterEnabled <= 1;
+					
+					end
+					
+					SRAM_we_n_M2 <= 1'b1;
+					
 					// Update the accumulators
 					colAccum_1 <= colAccum_1 + Mult_result_3;
 					colAccum_2 <= colAccum_2 + Mult_result_4;
 					colAccum_3 <= colAccum_3 + Mult_result_5;
 				
-					// Read the fourth row of 3 T values from RAM
-					RAM_address_a_0 <= RAM_address_T
+					// Read the eighth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
 					RAM_address_a_2 <= RAM_address_T + 1;
 					RAM_address_b_2 <= RAM_address_T + 2;
 					
 					// Increment the addresses
-					RAM_address_T <= RAM_address_T + 4;
+					RAM_address_T <= 67;
 					
 					if (CT_buf[15] == 1'b1) begin
 					
@@ -4164,41 +4829,61 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 					
 					end
 					
-					Mult_op_3_2 <= RAM_read_data_a_0;
+					Mult_op_3_2 <= RAM_read_data_b_0;
 				
 					Mult_op_4_2 <= RAM_read_data_a_2;
 					
 					Mult_op_5_2 <= RAM_read_data_b_2;
-					
-					m2_state <= S_M2_CC_S_2;
-				
-				end
-				
-				S_M2_CC_S_2: begin
-				
-					m2_state <= S_M2_CC_S_3;
-				
-				end
-				
-				S_M2_CC_S_3: begin
-				
-					m2_state <= S_M2_CC_S_4;
-				
-				end
-				
-				S_M2_CC_S_4: begin
-				
-					m2_state <= S_M2_CC_S_5;
-				
-				end
-				
-				S_M2_CC_S_5: begin
 				
 					m2_state <= S_M2_CC_S_6;
 				
 				end
 				
 				S_M2_CC_S_6: begin
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+					
+					// Read the first row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample - 3;
+					RAM_address_sample <= RAM_address_sample - 3;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
 				
 					m2_state <= S_M2_CC_S_7;
 				
@@ -4206,11 +4891,115 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_7: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the second row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+						Mult_op_5_1 <= CT_buf;
+					
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
+				
 					m2_state <= S_M2_CC_S_8;
 				
 				end
 				
 				S_M2_CC_S_8: begin
+					
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+					end
+					
+					// Update buffers
+					T_buf_1 <= colAccum_1 + Mult_result_3;
+					T_buf_2 <= colAccum_2 + Mult_result_4;
+					T_buf_3 <= colAccum_3 + Mult_result_5;
+					
+					S_write_buf <= colAccum_3 + Mult_result_5;
+					
+					// Update the accumulators
+					colAccum_1 <= 0;
+					colAccum_2 <= 0;
+					colAccum_3 <= 0;
+				
+					// Read the third row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
 				
 					m2_state <= S_M2_CC_S_9;
 				
@@ -4218,11 +5007,198 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_9: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+					end
+				
+					// CALC FINISHED
+					if (T_buf_1[31] == 1'b1) begin
+					
+						if (T_buf_2[31] == 1'b1) begin
+						
+							S_buf_1 <= {8'd0, 8'd0};
+						
+						end else begin
+						
+							if (T_buf_2[30:24] == 7'b0000000) begin
+							
+								S_buf_1 <= {8'd0, T_buf_2[23:16]};
+						
+							end else begin
+							
+								S_buf_1 <= {8'd0, 8'd255};
+								
+							end
+						
+						end
+					
+					end else begin
+					
+						if (T_buf_2[31] == 1'b1) begin
+						
+							if (T_buf_1[30:24] == 7'b0000000) begin
+							
+								S_buf_1 <= {T_buf_1[23:16], 8'd0};
+						
+							end else begin
+							
+								S_buf_1 <= {8'd255, 8'd0};
+								
+							end
+						
+						end else begin
+						
+							if (T_buf_1[30:24] == 7'b0000000) begin
+							
+								if (T_buf_2[30:24] == 7'b0000000) begin
+								
+									S_buf_1 <= {T_buf_1[23:16], T_buf_2[23:16]};
+								
+								end else begin
+								
+									S_buf_1 <= {T_buf_1[23:16], 8'd255};
+								
+								end
+						
+							end else begin
+							
+								if (T_buf_2[30:24] == 7'b0000000) begin
+								
+									S_buf_1 <= {8'd255, T_buf_2[23:16]};
+								
+								end else begin
+								
+									S_buf_1 <= {8'd255, 8'd255};
+								
+								end
+								
+							end
+						
+						end
+					
+					end
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the fourth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+						Mult_op_5_1 <= CT_buf;
+					
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
+				
 					m2_state <= S_M2_CC_S_10;
 				
 				end
 				
 				S_M2_CC_S_10: begin
+				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the fifth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
 				
 					m2_state <= S_M2_CC_S_11;
 				
@@ -4230,11 +5206,154 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_11: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the sixth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+						Mult_op_5_1 <= CT_buf;
+					
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
+				
 					m2_state <= S_M2_CC_S_12;
 				
 				end
 				
 				S_M2_CC_S_12: begin
+				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the seventh row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
 				
 					m2_state <= S_M2_CC_S_13;
 				
@@ -4242,11 +5361,163 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_13: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+						
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+				
+					sampleCounterEnabled <= 0;
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the eighth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= 70;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+						Mult_op_5_1 <= CT_buf;
+					
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
+				
 					m2_state <= S_M2_CC_S_14;
 				
 				end
 				
 				S_M2_CC_S_14: begin
+					
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						// Set the address to the pre-IDCT offset to get the next S'
+						SRAM_address_M2 <= M2_address_generation;
+					
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+					
+					if (isFinishedBlock) begin
+				
+						fetchedSPrime <= 1;
+						
+						finBlockHold <= 1;
+						
+						isFinishedWritingSPrime <= 0;
+				
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+					
+					// Read the first row of 2 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample - 3;
+					RAM_address_sample <= RAM_address_sample - 3;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
 				
 					m2_state <= S_M2_CC_S_15;
 				
@@ -4254,56 +5525,682 @@ always @(posedge CLOCK_50_I or negedge resetn) begin
 				
 				S_M2_CC_S_15: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the second row of 2 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_5_1 <= {{16{1'b1}}, CT_buf};
+					
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+						Mult_op_5_1 <= CT_buf;
+					
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
+					Mult_op_5_2 <= RAM_read_data_b_2;
+				
 					m2_state <= S_M2_CC_S_16;
 				
 				end
 				
 				S_M2_CC_S_16: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+				
+					// Update buffers
+					T_buf_1 <= colAccum_1 + Mult_result_3;
+					T_buf_2 <= colAccum_2 + Mult_result_4;
+					T_buf_3 <= colAccum_3 + Mult_result_5;
+					
+					// CALC FINISHED
+					
+					// Update the accumulators
+					colAccum_1 <= 0;
+					colAccum_2 <= 0;
+					colAccum_3 <= 0;
+				
+					// Read the third row of 2 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_17;
 				
 				end
 				
 				S_M2_CC_S_17: begin
 				
+					if (!fetchedSPrime || isFinishedWritingSPrime == 0) begin
+					
+						if (isSPrimeBuffered == 1'd0) begin
+					
+							S_prime_buf <= SRAM_read_data;
+							
+							isSPrimeBuffered <= 1'd1;
+							
+						end else begin
+						
+							RAM_write_data_a_0 <= {S_prime_buf, SRAM_read_data};
+							
+							// Set RAM address to the correct write address
+							RAM_address_a_0 <= RAM_address_prev;
+						
+							// Increment the RAM address offset
+							RAM_address_prev <= RAM_address_prev + 1;
+							
+							// Set write enable to write
+							RAM_we_n_a_0 <= 1;
+							
+							isSPrimeBuffered <= 1'd0;
+					
+						end
+						
+					end
+					
+					if (finBlockHold) begin
+					
+						isFinishedWritingSPrime <= 1;
+						
+					end
+					
+					sampleCounterEnabled <= 0;
+				
+					if (S_write_buf[31] == 1'b1) begin
+					
+						if (T_buf_1[31] == 1'b1) begin
+						
+							S_buf_2 <= {8'd0, 8'd0};
+						
+						end else begin
+						
+							if (T_buf_1[30:24] == 7'b0000000) begin
+							
+								S_buf_2 <= {8'd0, T_buf_1[23:16]};
+						
+							end else begin
+							
+								S_buf_2 <= {8'd0, 8'd255};
+								
+							end
+						
+						end
+					
+					end else begin
+					
+						if (T_buf_1[31] == 1'b1) begin
+						
+							if (S_write_buf[30:24] == 7'b0000000) begin
+							
+								S_buf_2 <= {S_write_buf[23:16], 8'd0};
+						
+							end else begin
+							
+								S_buf_2 <= {8'd255, 8'd0};
+								
+							end
+						
+						end else begin
+						
+							if (S_write_buf[30:24] == 7'b0000000) begin
+							
+								if (T_buf_1[30:24] == 7'b0000000) begin
+								
+									S_buf_2 <= {S_write_buf[23:16], T_buf_1[23:16]};
+								
+								end else begin
+								
+									S_buf_2 <= {S_write_buf[23:16], 8'd255};
+								
+								end
+						
+							end else begin
+							
+								if (T_buf_1[30:24] == 7'b0000000) begin
+								
+									S_buf_2 <= {8'd255, T_buf_1[23:16]};
+								
+								end else begin
+								
+									S_buf_2 <= {8'd255, 8'd255};
+								
+								end
+								
+							end
+						
+						end
+					
+					end
+					
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the fourth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_18;
 				
 				end
 				
 				S_M2_CC_S_18: begin
 				
+					// Set write enable to write
+					RAM_we_n_a_0 <= 0;
+				
+					// CALC FINISHED
+					if (T_buf_2[31] == 1'b1) begin
+					
+						if (T_buf_3[31] == 1'b1) begin
+						
+							S_buf_3 <= {8'd0, 8'd0};
+						
+						end else begin
+						
+							if (T_buf_3[30:24] == 7'b0000000) begin
+							
+								S_buf_3 <= {8'd0, T_buf_3[23:16]};
+						
+							end else begin
+							
+								S_buf_3 <= {8'd0, 8'd255};
+								
+							end
+						
+						end
+					
+					end else begin
+					
+						if (T_buf_3[31] == 1'b1) begin
+						
+							if (T_buf_2[30:24] == 7'b0000000) begin
+							
+								S_buf_3 <= {T_buf_2[23:16], 8'd0};
+						
+							end else begin
+							
+								S_buf_3 <= {8'd255, 8'd0};
+								
+							end
+						
+						end else begin
+						
+							if (T_buf_2[30:24] == 7'b0000000) begin
+							
+								if (T_buf_3[30:24] == 7'b0000000) begin
+								
+									S_buf_3 <= {T_buf_2[23:16], T_buf_3[23:16]};
+								
+								end else begin
+								
+									S_buf_3 <= {T_buf_2[23:16], 8'd255};
+								
+								end
+						
+							end else begin
+							
+								if (T_buf_3[30:24] == 7'b0000000) begin
+								
+									S_buf_3 <= {8'd255, T_buf_3[23:16]};
+								
+								end else begin
+								
+									S_buf_3 <= {8'd255, 8'd255};
+								
+								end
+								
+							end
+						
+						end
+					
+					end
+				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the fifth row of 2 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_19;
 				
 				end
 				
 				S_M2_CC_S_19: begin
 				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the sixth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_20;
 				
 				end
 				
 				S_M2_CC_S_20: begin
 				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					// Read the seventh row of 2 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					
+					// Increment the addresses
+					RAM_address_T <= RAM_address_T + 8;
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+					
+					// Read the next sample
+					RAM_address_a_1 <= RAM_address_sample + 1;
+					
+					// Increment the addresses
+					RAM_address_sample <= RAM_address_sample + 1;
+					
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+					end else begin
+					
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+					
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_21;
 				
 				end
 				
 				S_M2_CC_S_21: begin
+	
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
 				
+					// Read the eighth row of 3 T values from RAM
+					RAM_address_b_0 <= RAM_address_T;
+					RAM_address_a_2 <= RAM_address_T + 1;
+					RAM_address_b_2 <= RAM_address_T + 2;
+					
+					// Increment the addresses
+					RAM_address_T <= 64;
+					
+					if (CT_buf[15] == 1'b1) begin
+					
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+					
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+						
+					end else begin
+					
+						Mult_op_3_1 <= CT_buf;
+					
+						Mult_op_4_1 <= CT_buf;
+						
+					end
+					
+					Mult_op_3_2 <= RAM_read_data_b_0;
+				
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_22;
 				
 				end
 				
 				S_M2_CC_S_22: begin
 				
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
+				
+					if (calculationsPerformed != 7) begin
+				
+						// Read the first row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+							
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						// Read the next sample
+						RAM_address_a_1 <= RAM_address_sample + 1;
+						RAM_address_sample <= RAM_address_sample + 1;
+					
+					end
+					
+					// Buffer S_prime other sample
+					CT_buf <= RAM_read_data_a_1[15: 0];
+						
+					if (RAM_read_data_a_1[31] == 1'b1) begin
+						
+						Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+							
+					end else begin
+						
+						Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+						
+						Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+							
+					end
+						
+					Mult_op_3_2 <= RAM_read_data_b_0;
+					
+					Mult_op_4_2 <= RAM_read_data_a_2;
+					
 					m2_state <= S_M2_CC_S_23;
 				
 				end
 				
 				S_M2_CC_S_23: begin
 				
-					m2_state <= S_M2_IDLE;
+					// Update the accumulators
+					colAccum_1 <= colAccum_1 + Mult_result_3;
+					colAccum_2 <= colAccum_2 + Mult_result_4;
+					colAccum_3 <= colAccum_3 + Mult_result_5;
 				
+					if (calculationsPerformed != 7) begin
+				
+						// Read the second row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+					end
+						
+					if (CT_buf[15] == 1'b1) begin
+						
+						Mult_op_3_1 <= {{16{1'b1}}, CT_buf};
+						
+						Mult_op_4_1 <= {{16{1'b1}}, CT_buf};
+							
+					end else begin
+						
+						Mult_op_3_1 <= CT_buf;
+						
+						Mult_op_4_1 <= CT_buf;
+							
+					end
+						
+					Mult_op_3_2 <= RAM_read_data_b_0;
+					
+					Mult_op_4_2 <= RAM_read_data_a_2;
+						
+					m2_state <= S_M2_CC_S_24;
+					
+				end
+				
+				S_M2_CC_S_24: begin
+						
+					calculationsPerformed <= calculationsPerformed + 1;
+				
+					// Update buffers
+					T_buf_1 <= colAccum_1 + Mult_result_3;
+					T_buf_2 <= colAccum_2 + Mult_result_4;
+					T_buf_3 <= colAccum_3 + Mult_result_5;
+					
+					// CALC FINISHED
+					
+					// Update the accumulators
+					colAccum_1 <= 0;
+					colAccum_2 <= 0;
+					colAccum_3 <= 0;
+					
+					isSValueToWrite <= 1'b1;
+					
+					if (calculationsPerformed != 7) begin
+					
+						// Read the third row of 3 T values from RAM
+						RAM_address_b_0 <= RAM_address_T;
+						RAM_address_a_2 <= RAM_address_T + 1;
+						RAM_address_b_2 <= RAM_address_T + 2;
+						
+						// Increment the addresses
+						RAM_address_T <= RAM_address_T + 8;
+						
+						// Buffer S_prime other sample
+						CT_buf <= RAM_read_data_a_1[15: 0];
+						
+						// Read the next sample
+						RAM_address_a_1 <= RAM_address_sample + 1;
+						
+						// Increment sample counter
+						RAM_address_sample <= RAM_address_sample + 1;
+						
+						if (RAM_read_data_a_1[31] == 1'b1) begin
+						
+							Mult_op_3_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+							Mult_op_4_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+							
+							Mult_op_5_1 <= {{16{1'b1}}, RAM_read_data_a_1[31:16]};
+						
+						end else begin
+						
+							Mult_op_3_1 <= RAM_read_data_a_1[31:16];
+						
+							Mult_op_4_1 <= RAM_read_data_a_1[31:16];
+							
+							Mult_op_5_1 <= RAM_read_data_a_1[31:16];
+							
+						end
+						
+						Mult_op_3_2 <= RAM_read_data_b_0;
+					
+						Mult_op_4_2 <= RAM_read_data_a_2;
+						
+						Mult_op_5_2 <= RAM_read_data_b_2;
+						
+						m2_state <= S_M2_CC_S_1;
+					
+					end else begin
+					
+						m2_state <= S_M2_CC_S_1;
+						
+					end
+					
 				end
 				
 			endcase

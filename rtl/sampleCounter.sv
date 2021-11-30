@@ -14,9 +14,11 @@ module sampleCounter (
 	
 	input logic [17:0] baseAddress,
 	
-	input logic [4:0] colIdx,
+	input logic [5:0] colIdx,
 	
-	input logic [4:0] rowIdx,
+	input logic [5:0] rowIdx,
+	
+	input logic isYFinished,
 	
 	output logic [5:0] sampleCounter,
 	
@@ -53,36 +55,73 @@ always @(posedge clock or negedge resetn) begin
 
 		if (enabled) begin
 			
-			if (SC == 63) begin
+			if (!isYFinished) begin
+			
+				if (SC == 63) begin
 					
-				SC <= 0;
+					SC <= 0;
+							
+					if(SC[2:0] == 7 && SC[5:3] == 7) begin
+					
+						isFinishedBlock <= 1;
 						
-				if(SC[2:0] == 7 && SC[5:3] == 7) begin
-				
-					isFinishedBlock = 1;
+					end else begin
 					
+						isFinishedBlock <= 0;
+						
+					end
+							
 				end else begin
-				
-					isFinishedBlock = 0;
-					
+						
+					SC <= SC + 1;
+							
 				end
-						
+				
+				sampleCounter <= SC;
+				
+				rowAddress <= SC[5:3];
+				
+				colAddress <= SC[2:0];
+				
+				addressGen <= baseAddress + (({rowIdx, 8'd0} + {rowIdx, 6'd0}) << 3) + ({SC[5:3], 8'd0} + {SC[5:3], 6'd0}) + (colIdx << 3) + SC[2:0];
+			
 			end else begin
+			
+				if (SC == 63) begin
 					
-				SC <= SC + 1;
+					SC <= 0;
+							
+					if(SC[2:0] == 7 && SC[5:3] == 7) begin
+					
+						isFinishedBlock <= 1;
 						
+					end else begin
+					
+						isFinishedBlock <= 0;
+						
+					end
+							
+				end else begin
+						
+					SC <= SC + 1;
+							
+				end
+				
+				sampleCounter <= SC;
+				
+				rowAddress <= SC[5:3];
+				
+				colAddress <= SC[2:0];
+				
+				addressGen <= baseAddress + (({rowIdx, 7'd0} + {rowIdx, 5'd0}) << 3) + ({SC[5:3], 7'd0} + {SC[5:3], 5'd0}) + (colIdx << 3) + SC[2:0];
+			
 			end
 			
-			sampleCounter <= SC;
 			
-			rowAddress <= SC[5:3];
-			
-			colAddress <= SC[2:0];
-			
-			addressGen <= baseAddress + (({rowIdx, 8'd0} + {rowIdx, 6'd0}) << 3) + ({SC[5:3], 8'd0} + {SC[5:3], 6'd0}) + (colIdx << 3) + SC[2:0];
-			
-		end else begin
-			
+		end
+		
+		if (isFinishedBlock) begin
+		
 			SC <= 0;
 	
 			rowAddr <= 0;
@@ -91,8 +130,8 @@ always @(posedge clock or negedge resetn) begin
 			
 			addressGen <= baseAddress;
 			
-			isFinishedBlock = 0;
-				
+			isFinishedBlock <= 0;
+			
 		end
 			
 	end

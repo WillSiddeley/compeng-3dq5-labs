@@ -19,48 +19,18 @@ add wave -uns UUT/UART_timer
 
 add wave -divider -height 10 {SRAM signals}
 add wave -uns UUT/SRAM_address
+add wave -uns UUT/SRAM_address_write_M2
+add wave -uns UUT/M2_row_write
+add wave -uns UUT/M2_col_write
 add wave -hex UUT/SRAM_write_data
-add wave -bin UUT/SRAM_we_n
 add wave -hex UUT/SRAM_read_data
-
-add wave -divider -height 10 {VGA signals}
-add wave -bin UUT/VGA_unit/VGA_HSYNC_O
-add wave -bin UUT/VGA_unit/VGA_VSYNC_O
-add wave -uns UUT/VGA_unit/pixel_X_pos
-add wave -uns UUT/VGA_unit/pixel_Y_pos
-add wave -hex UUT/VGA_unit/VGA_red
-add wave -hex UUT/VGA_unit/VGA_green
-add wave -hex UUT/VGA_unit/VGA_blue
-
-add wave -divider -height 10 {SRAM Signals}
-add wave -uns UUT/SRAM_address
-add wave -uns UUT/SRAM_read_data
-add wave -uns UUT/SRAM_write_data
-add wave -uns UUT/SRAM_we_n
-
-add wave -divider -height 10 {RAM Signals}
-add wave -uns UUT/RAM_address_a_0
-add wave -uns UUT/RAM_address_b_0
-add wave -uns UUT/RAM_address_a_1
-add wave -uns UUT/RAM_address_b_1
-add wave -uns UUT/RAM_address_a_2
-add wave -hex UUT/RAM_read_data_a_0
-add wave -hex UUT/RAM_read_data_b_0
-add wave -hex UUT/RAM_read_data_a_1
-add wave -hex UUT/RAM_read_data_b_1
-add wave -hex UUT/RAM_read_data_a_2
-add wave -hex UUT/RAM_write_data_a_0
-add wave -hex UUT/RAM_write_data_b_0
-add wave -hex UUT/RAM_write_data_a_1
-add wave -hex UUT/RAM_write_data_b_1
-add wave -hex UUT/RAM_write_data_a_2
-add wave -hex UUT/RAM_write_data_b_2
-add wave -uns UUT/RAM_we_n_a_0
-add wave -uns UUT/RAM_we_n_b_0
-add wave -uns UUT/RAM_we_n_b_2
+add wave -bin UUT/SRAM_we_n
 
 add wave -divide -height 10 {Flags}
 add wave -uns UUT/Milestone_2_finished
+add wave -uns UUT/isYBlockFinished
+add wave -uns UUT/isUBlockFinished
+add wave -uns UUT/isVBlockFinished
 add wave -uns UUT/sampleCounterEnabled
 add wave -uns UUT/isFinishedBlock
 add wave -uns UUT/isTFilled
@@ -99,3 +69,24 @@ add wave -uns UUT/M2_row_index
 add wave -uns UUT/M2_col_index
 add wave -uns UUT/M2_address_generation
 add wave -hex UUT/M2_address_generation
+
+add wave -divider -height 10 {RAM Signals}
+add wave -uns UUT/RAM_address_a_0
+add wave -uns UUT/RAM_address_b_0
+add wave -uns UUT/RAM_address_a_1
+add wave -uns UUT/RAM_address_b_1
+add wave -uns UUT/RAM_address_a_2
+add wave -hex UUT/RAM_read_data_a_0
+add wave -hex UUT/RAM_read_data_b_0
+add wave -hex UUT/RAM_read_data_a_1
+add wave -hex UUT/RAM_read_data_b_1
+add wave -hex UUT/RAM_read_data_a_2
+add wave -hex UUT/RAM_write_data_a_0
+add wave -hex UUT/RAM_write_data_b_0
+add wave -hex UUT/RAM_write_data_a_1
+add wave -hex UUT/RAM_write_data_b_1
+add wave -hex UUT/RAM_write_data_a_2
+add wave -hex UUT/RAM_write_data_b_2
+add wave -uns UUT/RAM_we_n_a_0
+add wave -uns UUT/RAM_we_n_b_0
+add wave -uns UUT/RAM_we_n_b_2

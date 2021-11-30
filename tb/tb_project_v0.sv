@@ -30,20 +30,20 @@ add your own.
 
 // file for output
 // this is only useful if decoding is done all the way through
-`define OUTPUT_FILE_NAME "../data/motorcycle_tb.ppm"
+`define OUTPUT_FILE_NAME "../data/cat_tb.ppm"
 
 // file for comparison
 // to test milestone 2 independently, use the .sram_d1 file to check the output
-`define VERIFICATION_FILE_NAME "../data/motorcycle.sram_d1"
+`define VERIFICATION_FILE_NAME "../data/cat.sram_d1"
 
 // input file for milestone 1
-//`define INPUT_FILE_NAME "../data/motorcycle.sram_d1"
+//`define INPUT_FILE_NAME "../data/cat.sram_d1"
 
 // input file for milestone 2
-`define INPUT_FILE_NAME "../data/motorcycle.sram_d2"
+`define INPUT_FILE_NAME "../data/cat.sram_d2"
 
 // input file for milestone 3 (full project)
-//`define INPUT_FILE_NAME "../data/motorcycle.mic15"
+//`define INPUT_FILE_NAME "../data/cat.mic15"
 
 
 // the top module of the testbench
@@ -310,23 +310,12 @@ module TB;
 					SRAM_ARRAY_write_count[UUT.SRAM_address], UUT.SRAM_address, UUT.SRAM_address, $realtime);
 				warn_multiple_writes_to_same_location = warn_multiple_writes_to_same_location + 1;
 			end
-		end
-
-		if (UUT.RAM_we_n_b_0 == 1'b1) begin
-
-			$write("Writing value %x to RAM0 location %d\n", UUT.RAM_write_data_b_0, UUT.RAM_address_b_0);
 
 		end
 
-		if (UUT.RAM_we_n_a_2 == 1'b1) begin
+		if (UUT.RAM_we_n_a_0 == 1'b1) begin
 
-			$write("Writing value %x to RAM2 location %d\n", UUT.RAM_write_data_a_2, UUT.RAM_address_a_2);
-
-		end
-
-		if (UUT.RAM_we_n_b_2 == 1'b1) begin
-
-			$write("Writing value %x to RAM2 location %d\n", UUT.RAM_write_data_b_2, UUT.RAM_address_b_2);
+			$write("Writing value %x to RAM0 location %d\n", UUT.RAM_write_data_a_0, UUT.RAM_address_a_0);
 
 		end
 
